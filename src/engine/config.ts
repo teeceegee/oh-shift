@@ -1,27 +1,21 @@
 import type { DifficultyPreset, EconomyConfig } from './types';
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 export const BOARD_SIZE = 5;
 
 export const DEFAULT_ECONOMY: EconomyConfig = {
   minWordLength: 3,
-  startingShiftTokens: 2,
+  startingShiftTokens: 3,
   maxShiftTokens: 8,
   wordsPerShiftToken: 2,
   longWordBonusLength: 6,
-  insightPerWord: 1,
-  insightPerLongWord: 2,
-  baseMaxGuesses: 6,
-  clueCost: 2,
-  extraGuessesCost: 2,
-  extraGuessesGrant: 2,
-  revealPenalty: 25,
   rescuePenalty: 50,
-  boardConstructionBonusScore: 50,
-  boardConstructionBonusShifts: 1,
   targetBaseScore: 100,
   targetLengthStepScore: 25,
-  unusedGuessBonus: 20,
+  directSolveBonusScore: 75,
+  directSolveBonusShifts: 1,
+  efficiencyWordPar: 8,
+  efficiencyBonusPerWord: 15,
   phaseCompletionBonus: 100,
   phaseTileReplacementsMin: 3,
   phaseTileReplacementsMax: 5,
@@ -30,44 +24,35 @@ export const DEFAULT_ECONOMY: EconomyConfig = {
 };
 
 export interface DifficultySettings {
-  startingCluesPerTarget: number;
   startingShiftBonus: number;
-  startingInsight: number;
-  targetLengthsByPhase: (phase: number) => [number, number, number];
+  targetLengthForPhase: (phase: number) => number;
 }
 
 export const DIFFICULTY_SETTINGS: Record<DifficultyPreset, DifficultySettings> = {
   relaxed: {
-    startingCluesPerTarget: 2,
     startingShiftBonus: 1,
-    startingInsight: 2,
-    targetLengthsByPhase: (phase) => (phase <= 2 ? [4, 4, 5] : [4, 5, 5]),
+    targetLengthForPhase: (phase) => (phase <= 3 ? 4 : 5),
   },
   standard: {
-    startingCluesPerTarget: 1,
     startingShiftBonus: 0,
-    startingInsight: 1,
-    targetLengthsByPhase: (phase) => {
-      if (phase <= 2) return [4, 5, 5];
-      if (phase <= 6) return [4, 5, 6];
-      return [5, 6, 6];
+    targetLengthForPhase: (phase) => {
+      if (phase <= 2) return 4;
+      if (phase <= 5) return 5;
+      return 6;
     },
   },
   expert: {
-    startingCluesPerTarget: 1,
     startingShiftBonus: 0,
-    startingInsight: 0,
-    targetLengthsByPhase: (phase) => {
-      if (phase <= 2) return [4, 5, 6];
-      if (phase <= 5) return [5, 6, 6];
-      return [5, 6, 7];
+    targetLengthForPhase: (phase) => {
+      if (phase <= 2) return 5;
+      if (phase <= 5) return 6;
+      return 7;
     },
   },
 };
 
 /**
- * Balanced UK English letter weights tuned for 5x5 Boggle/word-grid density.
- * Ensures ~39% vowels and avoids rare letters clogging the grid.
+ * Balanced UK English letter weights tuned for 5x5 word-grid density.
  */
 export const LETTER_WEIGHTS: ReadonlyArray<readonly [string, number]> = [
   ['E', 12],

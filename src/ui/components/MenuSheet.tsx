@@ -200,7 +200,7 @@ export function MenuSheet({
               type="text"
               value={importText}
               onChange={(e) => setImportText(e.target.value)}
-              placeholder="Paste OS1:... Save Code"
+              placeholder="Paste OS2:... Save Code"
               aria-label="Paste Save Code to import"
               style={{
                 flex: 1,

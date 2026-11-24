@@ -13,8 +13,8 @@ import { decodeSaveCode, encodeSaveCode, getSaveSlotKey } from '../../src/storag
 
 const dict = getBundledDictionary();
 
-describe('Oh! Shift — Persistence, Save Codes & Daily Challenge', () => {
-  it('Encodes and decodes portable OS1 Save Codes losslessly', () => {
+describe('Oh! Shift v2 — Persistence, Save Codes & Daily Challenge', () => {
+  it('Encodes and decodes portable OS2 Save Codes losslessly', () => {
     let state = createNewGame({ seed: 'travel-save-test', dict, difficulty: 'expert' });
     state = dispatchAction(
       state,
@@ -23,7 +23,7 @@ describe('Oh! Shift — Persistence, Save Codes & Daily Challenge', () => {
     ).state;
 
     const code = encodeSaveCode(state);
-    expect(code.startsWith('OS1:')).toBe(true);
+    expect(code.startsWith('OS2:')).toBe(true);
 
     const decoded = decodeSaveCode(code);
     expect(decoded.error).toBeUndefined();
@@ -32,12 +32,12 @@ describe('Oh! Shift — Persistence, Save Codes & Daily Challenge', () => {
 
   it('Rejects invalid or corrupted Save Codes safely', () => {
     expect(decodeSaveCode('INVALID').error).toMatch(/prefix/i);
-    expect(decodeSaveCode('OS1:!!!not-base64!!!').error).toBeDefined();
-    expect(decodeSaveCode('OS1:e30').error).toMatch(/corrupted|incompatible/i);
+    expect(decodeSaveCode('OS2:!!!not-base64!!!').error).toBeDefined();
+    expect(decodeSaveCode('OS2:e30').error).toMatch(/corrupted|incompatible/i);
   });
 
   it('Computes local YYYY-MM-DD date keys and independent save slot keys', () => {
-    const sampleDate = new Date(2026, 10, 24, 23, 30, 0); // Local Nov 24, 2026
+    const sampleDate = new Date(2026, 10, 24, 23, 30, 0);
     expect(getLocalDateKey(sampleDate)).toBe('2026-11-24');
 
     expect(getSaveSlotKey('solo', 'run-123')).toBe('solo');
@@ -49,14 +49,16 @@ describe('Oh! Shift — Persistence, Save Codes & Daily Challenge', () => {
     const allAnswers: string[] = [];
 
     for (let phase = 1; phase <= DEFAULT_ECONOMY.dailyPhaseCount; phase++) {
-      for (const target of state.targets) {
-        allAnswers.push(target.answer);
-        state = dispatchAction(
-          state,
-          { type: 'SUBMIT_GUESS', targetId: target.id, word: target.answer },
-          dict,
-        ).state;
-      }
+      allAnswers.push(state.target.answer);
+      state = {
+        ...state,
+        target: {
+          ...state.target,
+          revealedPositions: new Array(state.target.length).fill(true),
+          solved: true,
+        },
+        stats: { ...state.stats, targetsSolved: state.stats.targetsSolved + 1 },
+      };
       state = dispatchAction(state, { type: 'ADVANCE_PHASE' }, dict).state;
     }
 

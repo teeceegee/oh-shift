@@ -17,17 +17,15 @@ export interface RunSummary {
   wordsFound: number;
   longestWord: string;
   targetsSolved: number;
-  boardBonuses: number;
+  directSolves: number;
   savedAt: string;
 }
 
 export interface LifetimeRecords {
   bestEndlessScore: number;
   highestPhaseReached: number;
-  dailiesCompleted: string[]; // YYYY-MM-DD keys
-  totalWordsFoundAllTime: number;
+  dailiesCompleted: string[];
   longestWordEver: string;
-  totalBoardBonusesAllTime: number;
   recentRuns: RunSummary[];
 }
 
@@ -36,9 +34,7 @@ export function createEmptyRecords(): LifetimeRecords {
     bestEndlessScore: 0,
     highestPhaseReached: 1,
     dailiesCompleted: [],
-    totalWordsFoundAllTime: 0,
     longestWordEver: '',
-    totalBoardBonusesAllTime: 0,
     recentRuns: [],
   };
 }
@@ -132,7 +128,9 @@ export async function saveGameState(state: GameState): Promise<void> {
 export async function loadGameState(slot: string): Promise<GameState | null> {
   const loaded = await idbGet<GameState>(STORE_SAVES, slot);
   if (!loaded || typeof loaded !== 'object') return null;
-  if (loaded.schemaVersion !== SCHEMA_VERSION || !Array.isArray(loaded.board)) return null;
+  if (loaded.schemaVersion !== SCHEMA_VERSION || !Array.isArray(loaded.board) || !loaded.target) {
+    return null;
+  }
   return loaded;
 }
 
@@ -176,8 +174,8 @@ function upsertRunSummary(runs: readonly RunSummary[], state: GameState): RunSum
     phasesCleared: state.stats.phasesCleared,
     wordsFound: state.stats.totalWordsFound,
     longestWord: state.stats.longestWord,
-    targetsSolved: state.stats.targetsSolvedByGuess + state.stats.targetsSolvedOnBoard,
-    boardBonuses: state.stats.targetsSolvedOnBoard,
+    targetsSolved: state.stats.targetsSolved,
+    directSolves: state.stats.directSolves,
     savedAt: state.updatedAt,
   };
 
@@ -185,11 +183,7 @@ function upsertRunSummary(runs: readonly RunSummary[], state: GameState): RunSum
   return [summary, ...filtered].slice(0, 20);
 }
 
-/**
- * Compact portable Save Code (`OS1:<base64url>`) to guard against
- * iOS Safari 7-day ITP storage eviction on uninstalled tabs or transfer runs across devices.
- */
-const SAVE_CODE_PREFIX = 'OS1:';
+const SAVE_CODE_PREFIX = 'OS2:';
 
 export function encodeSaveCode(state: GameState): string {
   const json = JSON.stringify(state);
@@ -205,7 +199,7 @@ export function encodeSaveCode(state: GameState): string {
 export function decodeSaveCode(code: string): { state?: GameState; error?: string } {
   const trimmed = code.trim();
   if (!trimmed.startsWith(SAVE_CODE_PREFIX)) {
-    return { error: 'Invalid Save Code prefix (expected OS1:...)' };
+    return { error: 'Invalid Save Code prefix (expected OS2:...)' };
   }
 
   try {
@@ -224,7 +218,7 @@ export function decodeSaveCode(code: string): { state?: GameState; error?: strin
       typeof parsed.seed !== 'string' ||
       !Array.isArray(parsed.board) ||
       parsed.board.length !== 5 ||
-      !Array.isArray(parsed.targets)
+      !parsed.target
     ) {
       return { error: 'Save Code is corrupted or from an incompatible version' };
     }

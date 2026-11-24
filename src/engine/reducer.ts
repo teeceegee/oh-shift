@@ -1,10 +1,9 @@
 import { applyShift, invertShift, validatePath } from './board';
 import { DEFAULT_ECONOMY, DIFFICULTY_SETTINGS, SCHEMA_VERSION } from './config';
 import { buildRescueBoard } from './deadlock';
-import { evaluateGuess, generateNextClue } from './deduction';
+import { evaluateWordAgainstTarget } from './deduction';
 import type { CompactDictionary } from './dictionary';
-import { evolveBoardForNextPhase, generateInitialBoard, generatePhaseTargets } from './generator';
-import { createPrng } from './prng';
+import { evolveBoardForNextPhase, generateInitialBoard, generatePhaseTarget } from './generator';
 import type {
   DifficultyPreset,
   DispatchResult,
@@ -14,6 +13,7 @@ import type {
   GameMode,
   GameState,
   RunStats,
+  WordProbeRecord,
 } from './types';
 
 export interface CreateGameOptions {
@@ -30,14 +30,11 @@ function createInitialStats(): RunStats {
   return {
     totalWordsFound: 0,
     longestWord: '',
-    targetsSolvedByGuess: 0,
-    targetsSolvedOnBoard: 0,
-    targetsRevealed: 0,
+    targetsSolved: 0,
+    directSolves: 0,
     shiftsSpent: 0,
-    cluesPurchased: 0,
     rescuesUsed: 0,
     phasesCleared: 0,
-    totalGuessesUsed: 0,
   };
 }
 
@@ -48,7 +45,7 @@ export function createNewGame(options: CreateGameOptions): GameState {
   const diffSettings = DIFFICULTY_SETTINGS[difficulty];
 
   const board = generateInitialBoard(options.seed, options.dict, config);
-  const targets = generatePhaseTargets(board, options.seed, 1, options.dict, difficulty, config);
+  const target = generatePhaseTarget(board, options.seed, 1, options.dict, difficulty);
 
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -64,10 +61,10 @@ export function createNewGame(options: CreateGameOptions): GameState {
       config.maxShiftTokens,
       config.startingShiftTokens + diffSettings.startingShiftBonus,
     ),
-    insightPoints: diffSettings.startingInsight,
     wordsTowardsNextShift: 0,
     foundWords: [],
-    targets,
+    probeHistory: [],
+    target,
     uncommittedShifts: [],
     rescueCount: 0,
     dailyComplete: false,
@@ -78,7 +75,7 @@ export function createNewGame(options: CreateGameOptions): GameState {
 }
 
 export function isPhaseReadyToAdvance(state: GameState): boolean {
-  return state.targets.length > 0 && state.targets.every((t) => t.status !== 'active');
+  return state.target.solved;
 }
 
 export function dispatchAction(
@@ -118,7 +115,6 @@ export function dispatchAction(
 
       const wordScore = word.length * word.length;
       const isLong = word.length >= config.longWordBonusLength;
-      const insightEarned = isLong ? config.insightPerLongWord : config.insightPerWord;
 
       let wordsTowards = state.wordsTowardsNextShift + 1;
       let shiftsEarned = 0;
@@ -130,9 +126,30 @@ export function dispatchAction(
         shiftsEarned += 1;
       }
 
+      // Evaluate this board word position-by-position against the hidden target word
+      const feedback = evaluateWordAgainstTarget(word, state.target.answer);
+      const nextRevealed = state.target.revealedPositions.slice();
+      const newlyPopulatedIndices: number[] = [];
+
+      if (!state.target.solved) {
+        const overlap = Math.min(word.length, state.target.length);
+        for (let i = 0; i < overlap; i++) {
+          if (word[i] === state.target.answer[i] && !nextRevealed[i]) {
+            nextRevealed[i] = true;
+            newlyPopulatedIndices.push(i);
+          }
+        }
+      }
+
+      const probeRecord: WordProbeRecord = {
+        word,
+        score: wordScore,
+        feedback,
+        newlyPopulatedIndices,
+      };
+
       let nextScore = state.score + wordScore;
       let nextShifts = Math.min(config.maxShiftTokens, state.shiftTokens + shiftsEarned);
-      const nextInsight = state.insightPoints + insightEarned;
       const nextStats: RunStats = {
         ...state.stats,
         totalWordsFound: state.stats.totalWordsFound + 1,
@@ -144,53 +161,66 @@ export function dispatchAction(
         word,
         scoreDelta: wordScore,
         shiftsEarned,
-        insightEarned,
+        newlyPopulatedIndices,
       });
 
-      // Board-grounded hybrid check: did the player physically construct an active hidden target?
-      const nextTargets = state.targets.map((target) => {
-        if (target.status === 'active' && target.answer === word) {
-          const targetBase =
-            config.targetBaseScore + config.targetLengthStepScore * (target.length - 3);
-          const unused = Math.max(0, target.maxGuesses - target.guesses.length);
-          const efficiencyBonus = unused * config.unusedGuessBonus;
-          const totalBonus = targetBase + efficiencyBonus + config.boardConstructionBonusScore;
+      const wasSolved = state.target.solved;
+      const nowAllPopulated = nextRevealed.every(Boolean);
+      const isDirectExactMatch = !wasSolved && word === state.target.answer;
 
-          nextScore += totalBonus;
-          nextShifts = Math.min(
-            config.maxShiftTokens,
-            nextShifts + config.boardConstructionBonusShifts,
-          );
-          nextStats.targetsSolvedOnBoard += 1;
-
-          events.push({
-            type: 'TARGET_SOLVED_ON_BOARD',
-            targetId: target.id,
-            word,
-            bonusScore: totalBonus,
-            bonusShifts: config.boardConstructionBonusShifts,
-          });
-
-          return { ...target, status: 'solved_board' as const };
-        }
-        return target;
-      });
-
-      const nextState: GameState = {
-        ...state,
-        score: nextScore,
-        shiftTokens: nextShifts,
-        insightPoints: nextInsight,
-        wordsTowardsNextShift: wordsTowards,
-        foundWords: [...state.foundWords, word],
-        targets: nextTargets,
-        uncommittedShifts: [], // Commit boundary: word submission locks prior shifts
-        stats: nextStats,
-        actionLog: [...state.actionLog, action],
-        updatedAt: timestamp,
+      let nextTarget = {
+        ...state.target,
+        revealedPositions: nextRevealed,
       };
 
-      return { state: nextState, events };
+      if (!wasSolved && (nowAllPopulated || isDirectExactMatch)) {
+        const targetBase =
+          config.targetBaseScore + config.targetLengthStepScore * (state.target.length - 3);
+        const wordsUsedThisPhase = state.foundWords.length + 1;
+        const efficiencyBonus =
+          Math.max(0, config.efficiencyWordPar - wordsUsedThisPhase) *
+          config.efficiencyBonusPerWord;
+        const directScore = isDirectExactMatch ? config.directSolveBonusScore : 0;
+        const bonusShifts = isDirectExactMatch ? config.directSolveBonusShifts : 0;
+        const totalBonus = targetBase + efficiencyBonus + directScore;
+
+        nextScore += totalBonus;
+        nextShifts = Math.min(config.maxShiftTokens, nextShifts + bonusShifts);
+        nextStats.targetsSolved += 1;
+        if (isDirectExactMatch) nextStats.directSolves += 1;
+
+        nextTarget = {
+          ...nextTarget,
+          revealedPositions: new Array(state.target.length).fill(true),
+          solved: true,
+          solvedDirectly: isDirectExactMatch,
+        };
+
+        events.push({
+          type: 'TARGET_SOLVED',
+          word: state.target.answer,
+          direct: isDirectExactMatch,
+          bonusScore: totalBonus,
+          bonusShifts,
+        });
+      }
+
+      return {
+        state: {
+          ...state,
+          score: nextScore,
+          shiftTokens: nextShifts,
+          wordsTowardsNextShift: wordsTowards,
+          foundWords: [...state.foundWords, word],
+          probeHistory: [probeRecord, ...state.probeHistory],
+          target: nextTarget,
+          uncommittedShifts: [], // Commit boundary: word submission locks prior shifts
+          stats: nextStats,
+          actionLog: [...state.actionLog, action],
+          updatedAt: timestamp,
+        },
+        events,
+      };
     }
 
     case 'SHIFT': {
@@ -239,172 +269,6 @@ export function dispatchAction(
       };
     }
 
-    case 'SUBMIT_GUESS': {
-      const target = state.targets.find((t) => t.id === action.targetId);
-      if (!target) {
-        return { state, events, error: 'Target not found' };
-      }
-      if (target.status !== 'active') {
-        return { state, events, error: 'Target is already resolved' };
-      }
-      if (target.guesses.length >= target.maxGuesses) {
-        return { state, events, error: 'No guesses remaining — buy extra guesses or reveal target' };
-      }
-
-      const guess = action.word.trim().toUpperCase();
-      if (guess.length !== target.length) {
-        return { state, events, error: `Guess must be ${target.length} letters long` };
-      }
-      if (!dict.hasWord(guess)) {
-        return { state, events, error: `"${guess}" is not in the UK English dictionary` };
-      }
-
-      const feedback = evaluateGuess(guess, target.answer);
-      const solved = feedback.every((f) => f === 'exact');
-      const updatedGuesses = [...target.guesses, { word: guess, feedback }];
-
-      let scoreDelta = 0;
-      if (solved) {
-        const base = config.targetBaseScore + config.targetLengthStepScore * (target.length - 3);
-        const unused = Math.max(0, target.maxGuesses - updatedGuesses.length);
-        scoreDelta = base + unused * config.unusedGuessBonus;
-      }
-
-      const nextTargets = state.targets.map((t) =>
-        t.id === target.id
-          ? {
-              ...t,
-              guesses: updatedGuesses,
-              status: solved ? ('solved_guess' as const) : t.status,
-            }
-          : t,
-      );
-
-      events.push({
-        type: 'GUESS_EVALUATED',
-        targetId: target.id,
-        word: guess,
-        solved,
-        scoreDelta,
-      });
-
-      return {
-        state: {
-          ...state,
-          score: state.score + scoreDelta,
-          targets: nextTargets,
-          uncommittedShifts: [], // Commit boundary
-          stats: {
-            ...state.stats,
-            totalGuessesUsed: state.stats.totalGuessesUsed + 1,
-            targetsSolvedByGuess: state.stats.targetsSolvedByGuess + (solved ? 1 : 0),
-          },
-          actionLog: [...state.actionLog, action],
-          updatedAt: timestamp,
-        },
-        events,
-      };
-    }
-
-    case 'BUY_CLUE': {
-      const target = state.targets.find((t) => t.id === action.targetId);
-      if (!target || target.status !== 'active') {
-        return { state, events, error: 'Active target not found' };
-      }
-      if (state.insightPoints < config.clueCost) {
-        return { state, events, error: `Need ${config.clueCost} Insight Points to buy a clue` };
-      }
-
-      const prng = createPrng(`${state.seed}:clue:${state.phase}:${target.id}:${target.clues.length}`);
-      const clue = generateNextClue(target, state.targets, state.board, prng);
-      if (!clue) {
-        return { state, events, error: 'No additional clues available for this target' };
-      }
-
-      const nextTargets = state.targets.map((t) =>
-        t.id === target.id ? { ...t, clues: [...t.clues, clue] } : t,
-      );
-
-      events.push({ type: 'CLUE_UNLOCKED', targetId: target.id, clue });
-
-      return {
-        state: {
-          ...state,
-          insightPoints: state.insightPoints - config.clueCost,
-          targets: nextTargets,
-          uncommittedShifts: [], // Commit boundary
-          stats: { ...state.stats, cluesPurchased: state.stats.cluesPurchased + 1 },
-          actionLog: [...state.actionLog, action],
-          updatedAt: timestamp,
-        },
-        events,
-      };
-    }
-
-    case 'BUY_EXTRA_GUESSES': {
-      const target = state.targets.find((t) => t.id === action.targetId);
-      if (!target || target.status !== 'active') {
-        return { state, events, error: 'Active target not found' };
-      }
-      if (state.insightPoints < config.extraGuessesCost) {
-        return {
-          state,
-          events,
-          error: `Need ${config.extraGuessesCost} Insight Points for extra guesses`,
-        };
-      }
-
-      const newMax = target.maxGuesses + config.extraGuessesGrant;
-      const nextTargets = state.targets.map((t) =>
-        t.id === target.id ? { ...t, maxGuesses: newMax } : t,
-      );
-
-      events.push({ type: 'EXTRA_GUESSES_ADDED', targetId: target.id, newMax });
-
-      return {
-        state: {
-          ...state,
-          insightPoints: state.insightPoints - config.extraGuessesCost,
-          targets: nextTargets,
-          actionLog: [...state.actionLog, action],
-          updatedAt: timestamp,
-        },
-        events,
-      };
-    }
-
-    case 'REVEAL_TARGET': {
-      const target = state.targets.find((t) => t.id === action.targetId);
-      if (!target || target.status !== 'active') {
-        return { state, events, error: 'Active target not found' };
-      }
-
-      const nextScore = Math.max(0, state.score - config.revealPenalty);
-      const nextTargets = state.targets.map((t) =>
-        t.id === target.id ? { ...t, status: 'revealed' as const } : t,
-      );
-
-      events.push({
-        type: 'TARGET_REVEALED',
-        targetId: target.id,
-        answer: target.answer,
-        penalty: config.revealPenalty,
-      });
-
-      return {
-        state: {
-          ...state,
-          score: nextScore,
-          targets: nextTargets,
-          uncommittedShifts: [],
-          stats: { ...state.stats, targetsRevealed: state.stats.targetsRevealed + 1 },
-          actionLog: [...state.actionLog, action],
-          updatedAt: timestamp,
-        },
-        events,
-      };
-    }
-
     case 'RESCUE_REFRESH': {
       const { board: rescuedBoard, replacedCount } = buildRescueBoard(state, dict, config);
       const nextScore = Math.max(0, state.score - config.rescuePenalty);
@@ -434,13 +298,10 @@ export function dispatchAction(
 
     case 'ADVANCE_PHASE': {
       if (!isPhaseReadyToAdvance(state)) {
-        return { state, events, error: 'Resolve all targets before advancing the phase' };
+        return { state, events, error: 'Populate all target letters before advancing the phase' };
       }
 
-      const allSolved = state.targets.every(
-        (t) => t.status === 'solved_guess' || t.status === 'solved_board',
-      );
-      const phaseBonus = allSolved ? config.phaseCompletionBonus : 0;
+      const phaseBonus = config.phaseCompletionBonus;
       const nextScore = state.score + phaseBonus;
       const phasesCleared = state.stats.phasesCleared + 1;
 
@@ -474,13 +335,12 @@ export function dispatchAction(
         dict,
         config,
       );
-      const nextTargets = generatePhaseTargets(
+      const nextTarget = generatePhaseTarget(
         nextBoard,
         state.seed,
         nextPhase,
         dict,
         state.difficulty,
-        config,
       );
 
       events.push({
@@ -496,8 +356,9 @@ export function dispatchAction(
           phase: nextPhase,
           board: nextBoard,
           score: nextScore,
-          foundWords: [], // Phase reset prevents permanent dictionary exhaustion
-          targets: nextTargets,
+          foundWords: [],
+          probeHistory: [],
+          target: nextTarget,
           uncommittedShifts: [],
           stats: { ...state.stats, phasesCleared },
           actionLog: [...state.actionLog, action],
@@ -509,9 +370,6 @@ export function dispatchAction(
   }
 }
 
-/**
- * Replays a recorded action log from a seed to verify determinism.
- */
 export function replayGame(
   options: CreateGameOptions,
   actions: readonly GameAction[],

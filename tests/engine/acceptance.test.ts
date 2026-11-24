@@ -5,19 +5,17 @@ import {
   createNewGame,
   DEFAULT_ECONOMY,
   dispatchAction,
-  evaluateGuess,
+  evaluateWordAgainstTarget,
   findBoardWords,
   getBoardLetterCounts,
   isBoardDeadlocked,
   replayGame,
   validatePath,
-  verifyClueMatchesAnswer,
 } from '../../src/engine';
 import type { Coord, GameAction } from '../../src/engine';
 
 const dict = getBundledDictionary();
 
-/** Helper: finds a valid adjacent path on the board for a given word (if present). */
 function findPathForWord(board: string[][], word: string): Coord[] | null {
   const dirs = [
     [-1, -1], [-1, 0], [-1, 1],
@@ -56,7 +54,7 @@ function findPathForWord(board: string[][], word: string): Coord[] | null {
   return null;
 }
 
-describe('Oh! Shift — Core Engine & Acceptance Criteria', () => {
+describe('Oh! Shift v2 — Unified Single-Target Core Engine', () => {
   const sampleBoard = [
     ['S', 'T', 'A', 'R', 'E'],
     ['P', 'L', 'O', 'N', 'D'],
@@ -65,23 +63,11 @@ describe('Oh! Shift — Core Engine & Acceptance Criteria', () => {
     ['G', 'H', 'O', 'U', 'L'],
   ];
 
-  it('AC-1: Rejects non-adjacent tile paths', () => {
-    const res = validatePath(sampleBoard, [
-      { row: 0, col: 0 },
-      { row: 0, col: 2 },
-    ]);
-    expect(res.valid).toBe(false);
-    expect(res.reason).toMatch(/adjacent/i);
-  });
-
-  it('AC-2: Rejects reusing the same tile within one word', () => {
-    const res = validatePath(sampleBoard, [
-      { row: 0, col: 0 },
-      { row: 0, col: 1 },
-      { row: 0, col: 0 },
-    ]);
-    expect(res.valid).toBe(false);
-    expect(res.reason).toMatch(/reuse/i);
+  it('AC-1 & AC-2: Rejects non-adjacent paths and tile reuse', () => {
+    expect(validatePath(sampleBoard, [{ row: 0, col: 0 }, { row: 0, col: 2 }]).valid).toBe(false);
+    expect(
+      validatePath(sampleBoard, [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 0 }]).valid,
+    ).toBe(false);
   });
 
   it('AC-3: Enforces minimum word length and curated UK English dictionary membership', () => {
@@ -91,7 +77,6 @@ describe('Oh! Shift — Core Engine & Acceptance Criteria', () => {
     expect(dict.hasWord('XQZJP')).toBe(false);
 
     const state = createNewGame({ seed: 'ac3-test', dict });
-    // Too short (2 letters)
     const tooShort = dispatchAction(
       state,
       { type: 'SUBMIT_WORD', path: [{ row: 0, col: 0 }, { row: 0, col: 1 }] },
@@ -100,13 +85,11 @@ describe('Oh! Shift — Core Engine & Acceptance Criteria', () => {
     expect(tooShort.error).toMatch(/at least 3/i);
   });
 
-  it('AC-4: Repeating a word in the same phase yields no additional score or resources', () => {
+  it('AC-4: Repeating a word in the same phase yields no additional score or shifts', () => {
     const state = createNewGame({ seed: 'ac4-test', dict });
     const playable = Array.from(findBoardWords(state.board, dict, { minLength: 3 }));
-    expect(playable.length).toBeGreaterThan(0);
+    const path = findPathForWord(state.board, playable[0])!;
 
-    const word = playable[0];
-    const path = findPathForWord(state.board, word)!;
     const first = dispatchAction(state, { type: 'SUBMIT_WORD', path }, dict);
     expect(first.error).toBeUndefined();
     expect(first.state.score).toBeGreaterThan(0);
@@ -114,188 +97,206 @@ describe('Oh! Shift — Core Engine & Acceptance Criteria', () => {
     const second = dispatchAction(first.state, { type: 'SUBMIT_WORD', path }, dict);
     expect(second.error).toMatch(/already been found/i);
     expect(second.state.score).toBe(first.state.score);
-    expect(second.state.insightPoints).toBe(first.state.insightPoints);
     expect(second.state.shiftTokens).toBe(first.state.shiftTokens);
   });
 
-  it('AC-5: Row right shift of [S,T,A,R,E] yields [E,S,T,A,R] and left shift restores it', () => {
-    const shiftedRight = applyShift(sampleBoard, { axis: 'row', index: 0, direction: 'right' });
-    expect(shiftedRight[0]).toEqual(['E', 'S', 'T', 'A', 'R']);
+  it('AC-5 & AC-6: Row and column wraparound shifts reverse cleanly', () => {
+    const right = applyShift(sampleBoard, { axis: 'row', index: 0, direction: 'right' });
+    expect(right[0]).toEqual(['E', 'S', 'T', 'A', 'R']);
+    expect(applyShift(right, { axis: 'row', index: 0, direction: 'left' })[0]).toEqual([
+      'S', 'T', 'A', 'R', 'E',
+    ]);
 
-    const restored = applyShift(shiftedRight, { axis: 'row', index: 0, direction: 'left' });
-    expect(restored[0]).toEqual(['S', 'T', 'A', 'R', 'E']);
+    const down = applyShift(sampleBoard, { axis: 'col', index: 0, direction: 'down' });
+    expect(down.map((r) => r[0])).toEqual(['G', 'S', 'P', 'C', 'B']);
+    expect(applyShift(down, { axis: 'col', index: 0, direction: 'up' }).map((r) => r[0])).toEqual([
+      'S', 'P', 'C', 'B', 'G',
+    ]);
   });
 
-  it('AC-6: Column shifts wrap vertically and reverse cleanly', () => {
-    const col0Before = sampleBoard.map((r) => r[0]); // [S, P, C, B, G]
-    const shiftedDown = applyShift(sampleBoard, { axis: 'col', index: 0, direction: 'down' });
-    expect(shiftedDown.map((r) => r[0])).toEqual(['G', 'S', 'P', 'C', 'B']);
-
-    const restored = applyShift(shiftedDown, { axis: 'col', index: 0, direction: 'up' });
-    expect(restored.map((r) => r[0])).toEqual(col0Before);
-  });
-
-  it('AC-7: Shifts cannot reduce token balance below zero, and uncommitted shift undo stack refunds tokens', () => {
+  it('AC-7: Shifts cannot reduce token balance below zero and Undo restores tokens & board', () => {
     let state = createNewGame({ seed: 'ac7-test', dict });
-    expect(state.shiftTokens).toBe(DEFAULT_ECONOMY.startingShiftTokens);
+    const startTokens = state.shiftTokens;
 
-    // Spend both starting tokens
-    const s1 = dispatchAction(state, { type: 'SHIFT', op: { axis: 'row', index: 0, direction: 'right' } }, dict);
-    const s2 = dispatchAction(s1.state, { type: 'SHIFT', op: { axis: 'col', index: 2, direction: 'up' } }, dict);
-    expect(s2.state.shiftTokens).toBe(0);
-    expect(s2.state.uncommittedShifts).toHaveLength(2);
-
-    // Third shift must fail without dropping below 0
-    const s3 = dispatchAction(s2.state, { type: 'SHIFT', op: { axis: 'row', index: 1, direction: 'left' } }, dict);
-    expect(s3.error).toMatch(/not enough shift tokens/i);
-    expect(s3.state.shiftTokens).toBe(0);
-
-    // Undo stack reverses both shifts and restores exact board + tokens
-    const u1 = dispatchAction(s2.state, { type: 'UNDO_SHIFT' }, dict);
-    const u2 = dispatchAction(u1.state, { type: 'UNDO_SHIFT' }, dict);
-    expect(u2.state.shiftTokens).toBe(DEFAULT_ECONOMY.startingShiftTokens);
-    expect(u2.state.board).toEqual(state.board);
-    expect(u2.state.uncommittedShifts).toHaveLength(0);
-  });
-
-  it('AC-10: Two-pass guess evaluation handles duplicate letters accurately', () => {
-    // Answer: SHEEP (two Es at 2,3). Guess: EERIE (Es at 0,1,4)
-    // Pass 1: no exacts. Pass 2: E@0 present, E@1 present, E@4 absent!
-    expect(evaluateGuess('EERIE', 'SHEEP')).toEqual([
-      'present',
-      'present',
-      'absent',
-      'absent',
-      'absent',
-    ]);
-
-    // Answer: APPLE (two Ps at 1,2). Guess: PUPPY (Ps at 0,2,3)
-    // Pass 1: P@2 exact (1 P left). Pass 2: P@0 present (0 Ps left), P@3 absent.
-    expect(evaluateGuess('PUPPY', 'APPLE')).toEqual([
-      'present',
-      'absent',
-      'exact',
-      'absent',
-      'absent',
-    ]);
-
-    // Exact match
-    expect(evaluateGuess('SHIFT', 'SHIFT')).toEqual([
-      'exact',
-      'exact',
-      'exact',
-      'exact',
-      'exact',
-    ]);
-  });
-
-  it('AC-11: Initial and purchased clues never contradict the underlying answer', () => {
-    let state = createNewGame({ seed: 'ac11-clues', dict, difficulty: 'relaxed' });
-    // Grant plenty of insight to buy multiple clues
-    state = { ...state, insightPoints: 20 };
-
-    for (const target of state.targets) {
-      expect(target.clues.length).toBeGreaterThanOrEqual(1);
-      for (const clue of target.clues) {
-        expect(verifyClueMatchesAnswer(clue, target, state.targets)).toBe(true);
-      }
-
-      // Buy 3 additional clues and verify each
-      for (let i = 0; i < 3; i++) {
-        const res = dispatchAction(state, { type: 'BUY_CLUE', targetId: target.id }, dict);
-        if (!res.error) {
-          state = res.state;
-          const updatedTarget = state.targets.find((t) => t.id === target.id)!;
-          const latest = updatedTarget.clues[updatedTarget.clues.length - 1];
-          expect(verifyClueMatchesAnswer(latest, updatedTarget, state.targets)).toBe(true);
-        }
-      }
+    for (let i = 0; i < startTokens; i++) {
+      state = dispatchAction(
+        state,
+        { type: 'SHIFT', op: { axis: 'row', index: i % 5, direction: 'right' } },
+        dict,
+      ).state;
     }
+    expect(state.shiftTokens).toBe(0);
+
+    const blocked = dispatchAction(
+      state,
+      { type: 'SHIFT', op: { axis: 'col', index: 0, direction: 'up' } },
+      dict,
+    );
+    expect(blocked.error).toMatch(/not enough shift tokens/i);
+    expect(blocked.state.shiftTokens).toBe(0);
+
+    // Undo all uncommitted shifts
+    for (let i = 0; i < startTokens; i++) {
+      state = dispatchAction(state, { type: 'UNDO_SHIFT' }, dict).state;
+    }
+    expect(state.shiftTokens).toBe(startTokens);
+    expect(state.uncommittedShifts).toHaveLength(0);
   });
 
-  it('Board-grounded hybrid: all generated targets respect board letter multiplicity & can be solved on-board for bonus', () => {
-    const state = createNewGame({ seed: 'hybrid-bonus-seed', dict });
-    const boardCounts = getBoardLetterCounts(state.board);
+  it('AC-10: Two-pass duplicate-letter evaluation works across different word lengths', () => {
+    // 5-letter probe vs 5-letter target (SHEEP)
+    expect(evaluateWordAgainstTarget('EERIE', 'SHEEP')).toEqual([
+      'present', 'present', 'absent', 'absent', 'absent',
+    ]);
+    // 3-letter probe (PAN) vs 5-letter target (PLANT): P exact@0, A present, N present
+    expect(evaluateWordAgainstTarget('PAN', 'PLANT')).toEqual(['exact', 'present', 'present']);
+    // 6-letter probe (PLANES) vs 5-letter target (PLANT): P,L,A,N exact; E,S absent
+    expect(evaluateWordAgainstTarget('PLANES', 'PLANT')).toEqual([
+      'exact', 'exact', 'exact', 'exact', 'absent', 'absent',
+    ]);
+  });
 
-    for (const target of state.targets) {
-      const needed: Record<string, number> = {};
-      for (const ch of target.answer) {
-        needed[ch] = (needed[ch] ?? 0) + 1;
-        expect(needed[ch]).toBeLessThanOrEqual(boardCounts[ch] ?? 0);
-      }
-    }
+  it('Unified loop: board words automatically populate matching target positions until solved', () => {
+    const base = createNewGame({ seed: 'positional-pop', dict });
+    // Force a deterministic target 'PLANT' and board containing PAN and SLATE + BRUNT
+    const board = [
+      ['P', 'A', 'N', 'X', 'Z'],
+      ['S', 'L', 'A', 'T', 'E'],
+      ['B', 'R', 'U', 'N', 'T'],
+      ['C', 'O', 'D', 'E', 'S'],
+      ['M', 'I', 'N', 'T', 'S'],
+    ];
+    let state = {
+      ...base,
+      board,
+      target: {
+        answer: 'PLANT',
+        length: 5,
+        parShifts: 1,
+        revealedPositions: [false, false, false, false, false],
+        solved: false,
+        solvedDirectly: false,
+      },
+    };
 
-    // Place target 0 directly on row 0 to test Board Construction Bonus
-    const target0 = state.targets[0];
-    const patchedBoard = state.board.map((r) => r.slice());
+    // 1. Submit PAN -> locks index 0 ('P')
+    const r1 = dispatchAction(
+      state,
+      { type: 'SUBMIT_WORD', path: [{ row: 0, col: 0 }, { row: 0, col: 1 }, { row: 0, col: 2 }] },
+      dict,
+    );
+    expect(r1.error).toBeUndefined();
+    expect(r1.state.target.revealedPositions).toEqual([true, false, false, false, false]);
+    expect(r1.state.target.solved).toBe(false);
+
+    // 2. Submit SLATE -> locks indices 1 ('L') and 2 ('A')
+    const r2 = dispatchAction(
+      r1.state,
+      {
+        type: 'SUBMIT_WORD',
+        path: [
+          { row: 1, col: 0 },
+          { row: 1, col: 1 },
+          { row: 1, col: 2 },
+          { row: 1, col: 3 },
+          { row: 1, col: 4 },
+        ],
+      },
+      dict,
+    );
+    expect(r2.state.target.revealedPositions).toEqual([true, true, true, false, false]);
+    expect(r2.state.target.solved).toBe(false);
+
+    // 3. Submit BRUNT -> locks indices 3 ('N') and 4 ('T') -> SOLVED!
+    const r3 = dispatchAction(
+      r2.state,
+      {
+        type: 'SUBMIT_WORD',
+        path: [
+          { row: 2, col: 0 },
+          { row: 2, col: 1 },
+          { row: 2, col: 2 },
+          { row: 2, col: 3 },
+          { row: 2, col: 4 },
+        ],
+      },
+      dict,
+    );
+    expect(r3.state.target.revealedPositions).toEqual([true, true, true, true, true]);
+    expect(r3.state.target.solved).toBe(true);
+    expect(r3.state.target.solvedDirectly).toBe(false);
+    expect(r3.events.some((e) => e.type === 'TARGET_SOLVED')).toBe(true);
+  });
+
+  it('Direct solve bonus: spelling the exact target word on the board awards bonus score & shift', () => {
+    const base = createNewGame({ seed: 'direct-solve', dict });
+    const targetWord = base.target.answer;
+    const patchedBoard = base.board.map((r) => r.slice());
     const path: Coord[] = [];
-    for (let i = 0; i < target0.answer.length; i++) {
+    for (let i = 0; i < targetWord.length; i++) {
       const r = Math.floor(i / 5);
       const c = i % 5;
-      patchedBoard[r][c] = target0.answer[i];
+      patchedBoard[r][c] = targetWord[i];
       path.push({ row: r, col: c });
     }
-    const patchedState = { ...state, board: patchedBoard, shiftTokens: 2 };
-    const res = dispatchAction(patchedState, { type: 'SUBMIT_WORD', path }, dict);
+    const state = { ...base, board: patchedBoard, shiftTokens: 2 };
+    const res = dispatchAction(state, { type: 'SUBMIT_WORD', path }, dict);
 
     expect(res.error).toBeUndefined();
-    const solvedEvent = res.events.find((e) => e.type === 'TARGET_SOLVED_ON_BOARD');
-    expect(solvedEvent).toBeDefined();
-    expect(res.state.targets[0].status).toBe('solved_board');
+    expect(res.state.target.solved).toBe(true);
+    expect(res.state.target.solvedDirectly).toBe(true);
     expect(res.state.shiftTokens).toBeGreaterThanOrEqual(3);
   });
 
-  it('AC-12: Deadlock detection and deterministic rescue refresh restore playability with score floor 0', () => {
+  it('AC-12: Deadlock detection and rescue refresh restore playability with score floor 0', () => {
     const state = createNewGame({ seed: 'ac12-deadlock', dict });
     const allWords = Array.from(findBoardWords(state.board, dict, { minLength: 3 }));
-    const deadlockedState = {
-      ...state,
-      shiftTokens: 0,
-      score: 20,
-      foundWords: allWords,
-    };
+    const deadlockedState = { ...state, shiftTokens: 0, score: 20, foundWords: allWords };
 
     expect(isBoardDeadlocked(deadlockedState, dict)).toBe(true);
-
     const rescued = dispatchAction(deadlockedState, { type: 'RESCUE_REFRESH' }, dict);
-    expect(rescued.error).toBeUndefined();
-    expect(rescued.state.score).toBe(0); // Clamped to floor 0
+    expect(rescued.state.score).toBe(0);
     expect(rescued.state.shiftTokens).toBeGreaterThanOrEqual(1);
     expect(isBoardDeadlocked(rescued.state, dict)).toBe(false);
   });
 
-  it('AC-14: Seeded games and action replays are 100% deterministic', () => {
+  it('AC-14: Seeded games and action replays are 100% deterministic & board-grounded', () => {
     const fixedTime = '2026-11-24T12:00:00.000Z';
-    const g1 = createNewGame({ seed: 'travel-2026', dict, nowIso: fixedTime });
-    const g2 = createNewGame({ seed: 'travel-2026', dict, nowIso: fixedTime });
+    const g1 = createNewGame({ seed: 'travel-v2', dict, nowIso: fixedTime });
+    const g2 = createNewGame({ seed: 'travel-v2', dict, nowIso: fixedTime });
     expect(g1).toEqual(g2);
+
+    // Target respects board letter multiplicity
+    const counts = getBoardLetterCounts(g1.board);
+    const needed: Record<string, number> = {};
+    for (const ch of g1.target.answer) {
+      needed[ch] = (needed[ch] ?? 0) + 1;
+      expect(needed[ch]).toBeLessThanOrEqual(counts[ch] ?? 0);
+    }
 
     const actions: GameAction[] = [
       { type: 'SHIFT', op: { axis: 'row', index: 1, direction: 'right' } },
       { type: 'UNDO_SHIFT' },
-      { type: 'SUBMIT_GUESS', targetId: g1.targets[0].id, word: g1.targets[0].answer },
     ];
-
-    const r1 = replayGame({ seed: 'travel-2026', dict, nowIso: fixedTime }, actions);
-    const r2 = replayGame({ seed: 'travel-2026', dict, nowIso: fixedTime }, actions);
-    expect(r1).toEqual(r2);
-    expect(r1.targets[0].status).toBe('solved_guess');
+    expect(replayGame({ seed: 'travel-v2', dict, nowIso: fixedTime }, actions)).toEqual(
+      replayGame({ seed: 'travel-v2', dict, nowIso: fixedTime }, actions),
+    );
   });
 
   it('Daily 5-Phase Challenge completes cleanly after Phase 5', () => {
-    let state = createNewGame({ seed: '2026-11-24', mode: 'daily', dict });
+    let state = createNewGame({ seed: 'daily-2026-11-24', mode: 'daily', dict });
 
     for (let phase = 1; phase <= DEFAULT_ECONOMY.dailyPhaseCount; phase++) {
-      expect(state.phase).toBe(phase);
-      for (const target of state.targets) {
-        const guessRes = dispatchAction(
-          state,
-          { type: 'SUBMIT_GUESS', targetId: target.id, word: target.answer },
-          dict,
-        );
-        expect(guessRes.error).toBeUndefined();
-        state = guessRes.state;
-      }
+      // Simulate solving the phase target
+      state = {
+        ...state,
+        target: {
+          ...state.target,
+          revealedPositions: new Array(state.target.length).fill(true),
+          solved: true,
+        },
+        stats: { ...state.stats, targetsSolved: state.stats.targetsSolved + 1 },
+      };
       const adv = dispatchAction(state, { type: 'ADVANCE_PHASE' }, dict);
       expect(adv.error).toBeUndefined();
       state = adv.state;

@@ -6,7 +6,6 @@ import {
   LETTER_WEIGHTS,
   VOWELS,
 } from './config';
-import { generateNextClue } from './deduction';
 import type { CompactDictionary } from './dictionary';
 import { createPrng, type Prng } from './prng';
 import type { DifficultyPreset, EconomyConfig, ShiftOp, TargetState } from './types';
@@ -56,7 +55,6 @@ function generateRawBoard(prng: Prng): string[][] {
     board.push(row);
   }
 
-  // Guarantee healthy vowel density (7..12 vowels on a 25-tile board)
   const vowelList = ['A', 'E', 'I', 'O', 'U'];
   const consonantList = ['R', 'T', 'N', 'S', 'L', 'C', 'D', 'P', 'M', 'H'];
   let vowels = countVowels(board);
@@ -79,9 +77,6 @@ function generateRawBoard(prng: Prng): string[][] {
   return board;
 }
 
-/**
- * Generates a deterministic 5x5 starting board validated for minimum playable words.
- */
 export function generateInitialBoard(
   seed: string,
   dict: CompactDictionary,
@@ -109,10 +104,6 @@ export function generateInitialBoard(
   return bestBoard;
 }
 
-/**
- * Evolves an existing 5x5 board between phases by replacing 3-5 seeded tiles
- * while validating minimum playable word density.
- */
 export function evolveBoardForNextPhase(
   prevBoard: readonly (readonly string[])[],
   seed: string,
@@ -155,7 +146,6 @@ export function evolveBoardForNextPhase(
     }
   }
 
-  // Fallback: fresh validated board if repeated small mutations stayed below threshold
   return {
     board: generateInitialBoard(`${seed}:fallback:${phase}`, dict, config),
     replacedCount: config.phaseTileReplacementsMax,
@@ -163,27 +153,23 @@ export function evolveBoardForNextPhase(
 }
 
 /**
- * Inverted forward-shift target generator (< 5 ms, zero BFS explosion).
- * Samples seeded 1-to-3-step shift sequences from the current board, runs fast
- * target-pool DFS on those shifted states, and selects 3 distinct board-grounded
- * targets with exact upper-bound `parShifts`.
+ * Generates ONE board-grounded target word for the phase using inverted forward-shift
+ * sampling (< 5ms). Every letter position of the target is guaranteed to be constructible
+ * on the 5x5 board within 0..3 wraparound shifts.
  */
-export function generatePhaseTargets(
+export function generatePhaseTarget(
   board: readonly (readonly string[])[],
   seed: string,
   phase: number,
   dict: CompactDictionary,
   difficulty: DifficultyPreset,
-  config: EconomyConfig = DEFAULT_ECONOMY,
-): TargetState[] {
-  const prng = createPrng(`${seed}:targets:${phase}`);
-  const diffSettings = DIFFICULTY_SETTINGS[difficulty];
-  const desiredLengths = diffSettings.targetLengthsByPhase(phase);
+): TargetState {
+  const prng = createPrng(`${seed}:target:${phase}`);
+  const desiredLength = DIFFICULTY_SETTINGS[difficulty].targetLengthForPhase(phase);
 
-  // Map each discovered target word to its smallest observed shift distance
   const candidatesByWord = new Map<string, number>();
 
-  // Depth 0 (current board)
+  // Depth 0
   const depth0 = findBoardWords(board, dict, {
     minLength: 4,
     maxLength: 7,
@@ -193,9 +179,8 @@ export function generatePhaseTargets(
     candidatesByWord.set(w, 0);
   }
 
-  // Sample 18 seeded 1..3-step shift paths (fast: ~1-3ms total!)
-  const sampleCount = 18;
-  for (let s = 0; s < sampleCount; s++) {
+  // Sample 18 seeded 1..3-step shift sequences
+  for (let s = 0; s < 18; s++) {
     let shifted = cloneBoard(board);
     const maxDepth = s < 6 ? 1 : s < 13 ? 2 : 3;
     for (let step = 1; step <= maxDepth; step++) {
@@ -214,71 +199,42 @@ export function generatePhaseTargets(
     }
   }
 
-  // Bucket candidates by length, preferring words that require >= 1 shift
-  const selectedWords: Array<{ word: string; parShifts: number }> = [];
-  const usedWords = new Set<string>();
-
-  const pickForLength = (targetLen: number): { word: string; parShifts: number } | null => {
-    const exactShift: Array<{ word: string; parShifts: number }> = [];
-    const exactZero: Array<{ word: string; parShifts: number }> = [];
+  const pickForLength = (len: number): { word: string; parShifts: number } | null => {
+    const shiftedMatches: Array<{ word: string; parShifts: number }> = [];
+    const zeroMatches: Array<{ word: string; parShifts: number }> = [];
 
     for (const [word, parShifts] of candidatesByWord.entries()) {
-      if (usedWords.has(word) || word.length !== targetLen) continue;
+      if (word.length !== len) continue;
       if (parShifts >= 1) {
-        exactShift.push({ word, parShifts });
+        shiftedMatches.push({ word, parShifts });
       } else {
-        exactZero.push({ word, parShifts });
+        zeroMatches.push({ word, parShifts });
       }
     }
 
-    if (exactShift.length > 0) return prng.pick(exactShift);
-    if (exactZero.length > 0) return prng.pick(exactZero);
+    if (shiftedMatches.length > 0) return prng.pick(shiftedMatches);
+    if (zeroMatches.length > 0) return prng.pick(zeroMatches);
     return null;
   };
 
-  for (const len of desiredLengths) {
-    let pick = pickForLength(len);
-    // Graceful length fallback (e.g. if no 7-letter word found, try 6, then 5, then 4)
-    if (!pick) {
-      for (const fallbackLen of [len - 1, len + 1, 5, 4, 6]) {
-        if (fallbackLen < 4 || fallbackLen > 7) continue;
-        pick = pickForLength(fallbackLen);
-        if (pick) break;
-      }
-    }
-    if (pick) {
-      usedWords.add(pick.word);
-      selectedWords.push(pick);
+  let chosen = pickForLength(desiredLength);
+  if (!chosen) {
+    for (const fallback of [desiredLength - 1, desiredLength + 1, 5, 4, 6]) {
+      if (fallback < 4 || fallback > 7) continue;
+      chosen = pickForLength(fallback);
+      if (chosen) break;
     }
   }
 
-  // Build TargetState shells first so relationship clues can inspect sibling targets
-  const targets: TargetState[] = selectedWords.map((item, idx) => ({
-    id: `p${phase}-t${idx + 1}`,
-    answer: item.word,
-    length: item.word.length,
-    parShifts: item.parShifts,
-    maxGuesses: config.baseMaxGuesses,
-    clues: [],
-    guesses: [],
-    status: 'active',
-  }));
+  const finalWord = chosen?.word ?? 'SHIFT';
+  const finalPar = chosen?.parShifts ?? 1;
 
-  // Attach verified initial clues per difficulty preset
-  for (const target of targets) {
-    for (let c = 0; c < diffSettings.startingCluesPerTarget; c++) {
-      const preferType =
-        c === 0
-          ? difficulty === 'expert'
-            ? 'shift_par'
-            : 'position'
-          : 'excluded_letter';
-      const clue = generateNextClue(target, targets, board, prng, preferType);
-      if (clue) {
-        target.clues.push(clue);
-      }
-    }
-  }
-
-  return targets;
+  return {
+    answer: finalWord,
+    length: finalWord.length,
+    parShifts: finalPar,
+    revealedPositions: new Array(finalWord.length).fill(false),
+    solved: false,
+    solvedDirectly: false,
+  };
 }

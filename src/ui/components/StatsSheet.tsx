@@ -9,8 +9,6 @@ interface StatsSheetProps {
 }
 
 export function StatsSheet({ state, records, onClose }: StatsSheetProps) {
-  const totalSolvedThisRun = state.stats.targetsSolvedByGuess + state.stats.targetsSolvedOnBoard;
-
   return (
     <BottomSheet title="Statistics & Records" onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -30,19 +28,19 @@ export function StatsSheet({ state, records, onClose }: StatsSheetProps) {
             </div>
             <div className="hud-card">
               <span className="hud-label">Solved</span>
-              <span className="hud-value">{totalSolvedThisRun}</span>
+              <span className="hud-value">{state.stats.targetsSolved}</span>
             </div>
             <div className="hud-card">
-              <span className="hud-label">Board ★</span>
+              <span className="hud-label">Direct ★</span>
               <span className="hud-value hud-value--shifts">
-                {state.stats.targetsSolvedOnBoard}
+                {state.stats.directSolves}
               </span>
             </div>
           </div>
           <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between' }}>
             <span>Longest word: <strong>{state.stats.longestWord || '—'}</strong></span>
             <span>Shifts spent: <strong>{state.stats.shiftsSpent}</strong></span>
-            <span>Clues: <strong>{state.stats.cluesPurchased}</strong></span>
+            <span>Phases: <strong>{state.stats.phasesCleared}</strong></span>
           </div>
         </section>
 

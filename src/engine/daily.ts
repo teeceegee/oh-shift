@@ -34,20 +34,15 @@ export function getMilestoneLabel(phasesCleared: number): string | null {
 
 /**
  * Generates a spoiler-free shareable summary for a completed Daily 5-Phase Challenge.
- * Never includes hidden target answers.
  */
 export function formatDailyShareSummary(state: GameState): string {
   const dateLabel = state.seed.replace(/^daily-/, '');
-  const totalSolved = state.stats.targetsSolvedByGuess + state.stats.targetsSolvedOnBoard;
-  const totalTargets = totalSolved + state.stats.targetsRevealed;
-  const boardStars = '★'.repeat(Math.min(15, state.stats.targetsSolvedOnBoard));
-  const guessChecks = '■'.repeat(Math.min(15, state.stats.targetsSolvedByGuess));
-  const revealedDots = '·'.repeat(Math.min(15, state.stats.targetsRevealed));
+  const stars = '★'.repeat(state.stats.directSolves);
+  const checks = '■'.repeat(Math.max(0, state.stats.targetsSolved - state.stats.directSolves));
 
   return [
     `Oh! Shift Daily · ${dateLabel}`,
-    `Score: ${state.score} | Phases: ${state.stats.phasesCleared}/${DEFAULT_ECONOMY.dailyPhaseCount}`,
-    `Targets: ${totalSolved}/${totalTargets} ${boardStars}${guessChecks}${revealedDots}`,
-    `Words: ${state.stats.totalWordsFound} | Shifts: ${state.stats.shiftsSpent} | Board Bonuses: ${state.stats.targetsSolvedOnBoard}`,
+    `Score: ${state.score} | Phases: ${state.stats.phasesCleared}/${DEFAULT_ECONOMY.dailyPhaseCount} ${stars}${checks}`,
+    `Words: ${state.stats.totalWordsFound} | Shifts: ${state.stats.shiftsSpent} | Direct Solves: ${state.stats.directSolves}`,
   ].join('\n');
 }

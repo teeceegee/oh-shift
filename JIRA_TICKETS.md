@@ -1,7 +1,7 @@
 # Echopost Master Jira Tickets Registry
 
 * **Instance**: `https://echopost.atlassian.net`
-* **Last Synchronized**: `2026-11-24 17:15:59`
+* **Last Synchronized**: `2026-11-24 17:37:32`
 * **Sync Command**: `jira sync-map` (automatically updated on `create-issue`, `update-issue`, and `transition-issue`)
 
 ---
@@ -29,7 +29,7 @@
 | [BSP-17](https://echopost.atlassian.net/browse/BSP-17) | Task | **To Do** | Medium | BSP-2 | Conduct Governor Mock Inspection Q&A Walk-Through & Scenario Practice |
 | [BSP-19](https://echopost.atlassian.net/browse/BSP-19) | Task | **Done** | High | BSP-3 | Deploy DfE Explore Education Statistics API Skill (dfe-ees), AI Provenance Attribution & 2025/26 Live Data Discovery Dossier |
 
-## Project: `EVD` — Everyday (336 Tickets)
+## Project: `EVD` — Everyday (338 Tickets)
 
 | Key | Type | Status | Priority | Parent | Summary |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -369,3 +369,5 @@
 | [EVD-337](https://echopost.atlassian.net/browse/EVD-337) | Task | **Done** | High | EVD-334 | Oh! Shift (Phase 3): Endless Progression, Daily 5-Phase Challenge & IndexedDB Auto-Save |
 | [EVD-338](https://echopost.atlassian.net/browse/EVD-338) | Task | **Done** | High | EVD-334 | Oh! Shift (Phase 4): Offline PWA Packaging, Accessibility QA & Static HTTPS Deployment |
 | [EVD-339](https://echopost.atlassian.net/browse/EVD-339) | Task | **To Do** | Low | EVD-334 | Oh! Shift (Phase 5 Backlog): Audio/Haptics Polish, Economy Tuning & Async Seeded Multiplayer Foundation |
+| [EVD-340](https://echopost.atlassian.net/browse/EVD-340) | Task | **Done** | High | EVD-334 | Oh! Shift UX: Replace Shift Mode toggle with direct edge shift arrows around 5x5 board |
+| [EVD-341](https://echopost.atlassian.net/browse/EVD-341) | Task | **Done** | High | EVD-334 | Oh! Shift v2 Core Pivot: Unified Single-Target Positional Population Gameplay |

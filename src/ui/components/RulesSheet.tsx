@@ -10,37 +10,44 @@ export function RulesSheet({ onClose }: RulesSheetProps) {
     <BottomSheet title="How to Play Oh! Shift" onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.9rem', lineHeight: 1.5 }}>
         <p style={{ margin: 0 }}>
-          <strong>Core Loop:</strong> Find words on the 5×5 board to earn{' '}
-          <strong>Shift Tokens</strong> and <strong>Insight Points</strong>, shift rows or columns
-          with wraparound, and deduce the <strong>3 hidden target words</strong> to advance each
-          phase.
+          <strong>Goal:</strong> Populate every letter of the hidden <strong>Target Word</strong>{' '}
+          by spelling valid words on the 5×5 board.
         </p>
 
         <div>
-          <strong>1. Finding Board Words</strong>
+          <strong>1. Positional Auto-Population</strong>
           <ul style={{ margin: '4px 0 0', paddingLeft: '18px' }}>
-            <li>Tap or drag across 3+ adjacent tiles (including diagonals). Tiles cannot be reused in one word.</li>
-            <li>Every 2 distinct valid words earn <strong>+1 Shift Token</strong> (cap {DEFAULT_ECONOMY.maxShiftTokens}).</li>
-            <li>Words of 6+ letters earn an extra <strong>+1 Shift Token</strong> and <strong>+2 Insight</strong>.</li>
-            <li>Letters stay on the board; each word scores <code>length²</code> points once per phase.</li>
+            <li>Tap or drag 3+ adjacent tiles (including diagonals) to submit a board word.</li>
+            <li>
+              Every letter in your word that matches the <strong>same position</strong> in the
+              target word automatically locks into the target slots above the board (<strong>✓ Green</strong>).
+            </li>
+            <li>
+              <strong>↔ Amber</strong> means that letter appears elsewhere in the target word;{' '}
+              <strong>× Grey</strong> means it is not in the target word.
+            </li>
+            <li>
+              To fill later slots (like position 5 or 6), spell words of that length whose 5th or
+              6th letter matches — or deduce the target and spell it directly for a{' '}
+              <strong>+{DEFAULT_ECONOMY.directSolveBonusScore} pt Direct Solve Bonus &amp; +1 Shift</strong>!
+            </li>
           </ul>
         </div>
 
         <div>
-          <strong>2. Shifting Rows &amp; Columns</strong>
+          <strong>2. Earning &amp; Using Shifts</strong>
           <ul style={{ margin: '4px 0 0', paddingLeft: '18px' }}>
-            <li>Tap any arrow around the edge of the board (<strong>◀ ▶ ▲ ▼</strong>) to slide that row or column with wraparound.</li>
-            <li>Uncommitted shifts can be undone step-by-step for a full token refund before submitting a word or guess.</li>
+            <li>Every 2 distinct valid words earn <strong>+1 Shift Token</strong> (cap {DEFAULT_ECONOMY.maxShiftTokens}); words of 6+ letters earn an extra <strong>+1 Shift</strong>.</li>
+            <li>Tap any red edge arrow (<strong>◀ ▶ ▲ ▼</strong>) around the board to slide that row or column with wraparound.</li>
+            <li>Tap <strong>↶ Undo</strong> before submitting a word to reverse uncommitted shifts and refund tokens.</li>
           </ul>
         </div>
 
         <div>
-          <strong>3. Board-Grounded Hybrid Deduction</strong>
+          <strong>3. Advancing Phases</strong>
           <ul style={{ margin: '4px 0 0', paddingLeft: '18px' }}>
-            <li>Every hidden target uses letters currently on the 5×5 board (dimmed keys are not on the board).</li>
-            <li>Each target has <strong>{DEFAULT_ECONOMY.baseMaxGuesses} free guesses</strong> with colour-independent feedback: <strong>✓</strong> Exact, <strong>↔</strong> Misplaced, <strong>×</strong> Absent.</li>
-            <li>Spend <strong>{DEFAULT_ECONOMY.clueCost} Insight</strong> to unlock verified clues.</li>
-            <li><strong>Board Construction Bonus:</strong> Shift and physically spell a hidden target on the board to solve it instantly for <strong>+{DEFAULT_ECONOMY.boardConstructionBonusScore} pts &amp; +{DEFAULT_ECONOMY.boardConstructionBonusShifts} Shift</strong>!</li>
+            <li>Once all slots of the target word are populated, earn a <strong>+{DEFAULT_ECONOMY.phaseCompletionBonus} Phase Bonus</strong>.</li>
+            <li>3–5 tiles refresh on the 5×5 board and a new hidden target begins!</li>
           </ul>
         </div>
       </div>
