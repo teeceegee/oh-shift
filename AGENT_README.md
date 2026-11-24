@@ -22,6 +22,7 @@ The core loop combines adjacent-letter word building on a persistent 5×5 board,
 - **Stack:** TypeScript 5, React 19, Vite 6, CSS Modules / Custom Properties, Vitest, `vite-plugin-pwa` (Workbox), IndexedDB.
 - **Engine Architecture:** Pure deterministic TypeScript engine in `src/engine/` with zero DOM/network dependencies and a replayable `GameAction` log.
 - **Repository:** `https://github.com/teeceegee/oh-shift`
+- **Live Offline PWA (GitHub Pages):** `https://teeceegee.github.io/oh-shift/`
 - **Source Specification:** [Oh_Shift_Game_Specification.md](file:///Volumes/Kingston%20SSD%201T/NeosDrive/08_Tech,%20Dev%20&%20AI/AI/Gemini/AntiGravity/Oh!/Oh!%20Shift/specification/Oh_Shift_Game_Specification.md)
 - **Verification Commands:**
   - `npm run build:dict` — Rebuild front-coded UK English dictionary (`uk-en-v1`) from SCOWL tiers.
@@ -51,3 +52,4 @@ The core loop combines adjacent-letter word building on a persistent 5×5 board,
 - **2026-11-24:** Completed **Phase 2 (`EVD-336`)**: implemented warm tactile editorial design system (parchment light / charcoal dark), responsive 5×5 `BoardGrid` (drag + tap selection, SVG path connector, swipe + tap Shift Mode, Undo stack), portrait iPhone bottom-sheet `DeductionPanel` + iPad landscape side-by-side layout, board-aware `Keyboard` (dimming off-board letters), colour-independent feedback (`✓ / ↔ / ×`), `HistorySheet`, and `RulesSheet`. Verified with `npm test` (13/13) and `npm run build` (`206 KB` gzipped).
 - **2026-11-24:** Connected workspace to GitHub repository `https://github.com/teeceegee/oh-shift` and pushed Phases 1–2.
 - **2026-11-24:** Completed **Phase 3 (`EVD-337`)**: implemented schema-versioned IndexedDB per-action auto-save/resume (`src/storage/db.ts`) with `localStorage` fallback and portable `OS1:` Save Code export/import, local-timezone Daily 5-Phase Challenge with spoiler-free shareable summary (`src/engine/daily.ts`), Endless milestones (5/10/20/40+), difficulty presets & custom seeds (`MenuSheet.tsx`), and lifetime records/history (`StatsSheet.tsx`). Verified with `npm test` (18/18) and `npm run build`.
+- **2026-11-24:** Completed **Phase 4 (`EVD-338`)**: configured `vite-plugin-pwa` (Workbox) precaching all 16 assets (`816 KiB` uncompressed / `~210 KB` gzipped including `dict-uk-en-v1`), deferred `PwaUpdateBanner` (no mid-game forced reloads), editorial SVG/PNG PWA & Apple Touch icons, iOS standalone meta tags, Rollup chunk splitting, and GitHub Actions deployment workflow to GitHub Pages (`https://teeceegee.github.io/oh-shift/`). All MVP Phases 1–4 complete.

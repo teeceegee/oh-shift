@@ -1,7 +1,7 @@
 # Echopost Master Jira Tickets Registry
 
 * **Instance**: `https://echopost.atlassian.net`
-* **Last Synchronized**: `2026-11-24 16:45:54`
+* **Last Synchronized**: `2026-11-24 16:52:35`
 * **Sync Command**: `jira sync-map` (automatically updated on `create-issue`, `update-issue`, and `transition-issue`)
 
 ---
@@ -367,5 +367,5 @@
 | [EVD-335](https://echopost.atlassian.net/browse/EVD-335) | Task | **Done** | High | EVD-334 | Oh! Shift (Phase 1): Project Scaffolding, UK English Dictionary Pipeline & Deterministic Core Engine |
 | [EVD-336](https://echopost.atlassian.net/browse/EVD-336) | Task | **Done** | High | EVD-334 | Oh! Shift (Phase 2): Warm Tactile Editorial UI, Board Shifting Controls & Deduction UX |
 | [EVD-337](https://echopost.atlassian.net/browse/EVD-337) | Task | **Done** | High | EVD-334 | Oh! Shift (Phase 3): Endless Progression, Daily 5-Phase Challenge & IndexedDB Auto-Save |
-| [EVD-338](https://echopost.atlassian.net/browse/EVD-338) | Task | **To Do** | High | EVD-334 | Oh! Shift (Phase 4): Offline PWA Packaging, Accessibility QA & Static HTTPS Deployment |
+| [EVD-338](https://echopost.atlassian.net/browse/EVD-338) | Task | **Done** | High | EVD-334 | Oh! Shift (Phase 4): Offline PWA Packaging, Accessibility QA & Static HTTPS Deployment |
 | [EVD-339](https://echopost.atlassian.net/browse/EVD-339) | Task | **To Do** | Low | EVD-334 | Oh! Shift (Phase 5 Backlog): Audio/Haptics Polish, Economy Tuning & Async Seeded Multiplayer Foundation |

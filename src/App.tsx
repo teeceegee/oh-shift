@@ -26,6 +26,7 @@ import { BottomSheet } from './ui/components/BottomSheet';
 import { DeductionPanel } from './ui/components/DeductionPanel';
 import { HistorySheet } from './ui/components/HistorySheet';
 import { MenuSheet } from './ui/components/MenuSheet';
+import { PwaUpdateBanner } from './ui/components/PwaUpdateBanner';
 import { RulesSheet } from './ui/components/RulesSheet';
 import { ShiftTray } from './ui/components/ShiftTray';
 import { StatsSheet } from './ui/components/StatsSheet';
@@ -295,6 +296,9 @@ export function App() {
           </button>
         </div>
       </header>
+
+      {/* Deferred Offline/Update Banner */}
+      <PwaUpdateBanner />
 
       {/* HUD Strip */}
       <section className="hud-strip" aria-label="Game status">
