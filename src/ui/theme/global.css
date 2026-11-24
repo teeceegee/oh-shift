@@ -278,10 +278,10 @@ button:disabled {
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-sm);
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--bg-board-well) 65%, var(--border-subtle));
+  border: 1px solid color-mix(in srgb, var(--border-strong) 35%, transparent);
   color: var(--accent-warm);
-  font-size: 0.78rem;
+  font-size: 0.84rem;
   font-weight: 700;
   line-height: 1;
   transition: background var(--transition-fast), color var(--transition-fast),
@@ -289,9 +289,8 @@ button:disabled {
 }
 
 .shift-arrow-btn:hover:not(:disabled) {
-  background: var(--accent-warm);
-  border-color: var(--accent-warm);
-  color: var(--text-on-accent);
+  background: color-mix(in srgb, var(--bg-board-well) 40%, var(--border-strong));
+  border-color: var(--border-strong);
 }
 
 .shift-arrow-btn:active:not(:disabled) {
@@ -299,7 +298,10 @@ button:disabled {
 }
 
 .shift-arrow-btn:disabled {
-  opacity: 0.28;
+  background: color-mix(in srgb, var(--bg-board-well) 85%, var(--border-subtle));
+  border-color: transparent;
+  color: var(--text-muted);
+  opacity: 0.55;
 }
 
 .board-grid {
