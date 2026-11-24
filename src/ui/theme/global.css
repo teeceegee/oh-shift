@@ -241,25 +241,77 @@ button:disabled {
   white-space: nowrap;
 }
 
-/* 5x5 Tactile Board */
+/* 5x5 Tactile Board with Direct Edge Shift Arrows */
 .board-well {
   position: relative;
   background: var(--bg-board-well);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
-  padding: 10px;
-  touch-action: none;
+  padding: 6px;
   user-select: none;
   -webkit-user-select: none;
 }
 
+.board-frame {
+  display: grid;
+  grid-template-columns: 32px repeat(5, 1fr) 32px;
+  grid-template-rows: 32px repeat(5, 1fr) 32px;
+  gap: 5px;
+  align-items: stretch;
+  justify-items: stretch;
+}
+
+@media (min-width: 480px) {
+  .board-well {
+    padding: 8px;
+  }
+
+  .board-frame {
+    grid-template-columns: 38px repeat(5, 1fr) 38px;
+    grid-template-rows: 38px repeat(5, 1fr) 38px;
+    gap: 6px;
+  }
+}
+
+.shift-arrow-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--accent-warm);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1;
+  transition: background var(--transition-fast), color var(--transition-fast),
+    transform var(--transition-fast), border-color var(--transition-fast);
+}
+
+.shift-arrow-btn:hover:not(:disabled) {
+  background: var(--accent-warm);
+  border-color: var(--accent-warm);
+  color: var(--text-on-accent);
+}
+
+.shift-arrow-btn:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.shift-arrow-btn:disabled {
+  opacity: 0.28;
+}
+
 .board-grid {
+  grid-column: 2 / 7;
+  grid-row: 2 / 7;
   position: relative;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 7px;
+  gap: 6px;
   width: 100%;
   aspect-ratio: 1 / 1;
+  touch-action: none;
 }
 
 .board-svg-overlay {

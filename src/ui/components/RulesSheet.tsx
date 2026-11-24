@@ -29,7 +29,7 @@ export function RulesSheet({ onClose }: RulesSheetProps) {
         <div>
           <strong>2. Shifting Rows &amp; Columns</strong>
           <ul style={{ margin: '4px 0 0', paddingLeft: '18px' }}>
-            <li>Switch to <strong>Shift</strong> mode to slide any row left/right or column up/down with wraparound.</li>
+            <li>Tap any arrow around the edge of the board (<strong>◀ ▶ ▲ ▼</strong>) to slide that row or column with wraparound.</li>
             <li>Uncommitted shifts can be undone step-by-step for a full token refund before submitting a word or guess.</li>
           </ul>
         </div>

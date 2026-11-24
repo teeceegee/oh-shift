@@ -1,7 +1,7 @@
 # Echopost Master Jira Tickets Registry
 
 * **Instance**: `https://echopost.atlassian.net`
-* **Last Synchronized**: `2026-11-24 16:52:35`
+* **Last Synchronized**: `2026-11-24 17:15:59`
 * **Sync Command**: `jira sync-map` (automatically updated on `create-issue`, `update-issue`, and `transition-issue`)
 
 ---

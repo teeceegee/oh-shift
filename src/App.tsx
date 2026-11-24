@@ -12,7 +12,7 @@ import {
   isBoardDeadlocked,
   isPhaseReadyToAdvance,
 } from './engine';
-import type { Coord, DifficultyPreset, GameAction, GameState, ShiftAxis, ShiftOp } from './engine';
+import type { Coord, DifficultyPreset, GameAction, GameState, ShiftOp } from './engine';
 import {
   createEmptyRecords,
   loadGameState,
@@ -28,7 +28,6 @@ import { HistorySheet } from './ui/components/HistorySheet';
 import { MenuSheet } from './ui/components/MenuSheet';
 import { PwaUpdateBanner } from './ui/components/PwaUpdateBanner';
 import { RulesSheet } from './ui/components/RulesSheet';
-import { ShiftTray } from './ui/components/ShiftTray';
 import { StatsSheet } from './ui/components/StatsSheet';
 
 interface ToastState {
@@ -58,10 +57,7 @@ export function App() {
   const [records, setRecords] = useState<LifetimeRecords>(createEmptyRecords);
   const [hydrated, setHydrated] = useState(false);
 
-  const [interactionMode, setInteractionMode] = useState<'spell' | 'shift'>('spell');
   const [selectedPath, setSelectedPath] = useState<Coord[]>([]);
-  const [activeShiftAxis, setActiveShiftAxis] = useState<ShiftAxis>('row');
-  const [activeShiftIndex, setActiveShiftIndex] = useState<number>(0);
 
   const [activeTargetId, setActiveTargetId] = useState<string>(state.targets[0]?.id ?? '');
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
@@ -230,8 +226,6 @@ export function App() {
 
   const handleShift = (op: ShiftOp) => {
     setSelectedPath([]);
-    setActiveShiftAxis(op.axis);
-    setActiveShiftIndex(op.index);
     runAction({ type: 'SHIFT', op });
   };
 
@@ -353,33 +347,27 @@ export function App() {
 
       {/* Main Responsive Play Area */}
       <main className="play-layout">
-        {/* Left / Primary Column: Board, Controls & Target Chips */}
+        {/* Left / Primary Column: Board, Word Bar & Target Chips */}
         <div className="board-column">
-          {/* Mode Toggle + Undo Shift */}
-          <div className="mode-bar">
-            <div className="segmented" role="group" aria-label="Board interaction mode">
-              <button
-                type="button"
-                className="segmented-btn"
-                aria-pressed={interactionMode === 'spell'}
-                onClick={() => setInteractionMode('spell')}
-              >
-                Spell Words
-              </button>
-              <button
-                type="button"
-                className="segmented-btn"
-                aria-pressed={interactionMode === 'shift'}
-                onClick={() => {
-                  setSelectedPath([]);
-                  setInteractionMode('shift');
-                }}
-              >
-                Shift Board ({state.shiftTokens})
-              </button>
-            </div>
+          {/* 5x5 Tactile Grid with Direct Edge Shift Arrows */}
+          <BoardGrid
+            board={state.board}
+            selectedPath={selectedPath}
+            shiftTokens={state.shiftTokens}
+            disabled={state.dailyComplete}
+            onPathChange={setSelectedPath}
+            onShift={handleShift}
+          />
 
-            {state.uncommittedShifts.length > 0 && (
+          {/* Word Preview Bar + Optional Uncommitted Shift Undo */}
+          <div className="word-bar">
+            <div
+              className={`word-preview ${previewWord ? '' : 'word-preview--empty'}`}
+              aria-live="polite"
+            >
+              {previewWord || 'Tap or drag letters · arrows shift rows/cols'}
+            </div>
+            {state.uncommittedShifts.length > 0 && selectedPath.length === 0 && (
               <button
                 type="button"
                 className="undo-btn"
@@ -388,60 +376,24 @@ export function App() {
                 ↶ Undo ({state.uncommittedShifts.length})
               </button>
             )}
-          </div>
-
-          {/* 5x5 Tactile Grid */}
-          <BoardGrid
-            board={state.board}
-            interactionMode={interactionMode}
-            selectedPath={selectedPath}
-            activeShiftAxis={activeShiftAxis}
-            activeShiftIndex={activeShiftIndex}
-            shiftTokens={state.shiftTokens}
-            onPathChange={setSelectedPath}
-            onSelectShiftTarget={(row, col) => {
-              setActiveShiftIndex(activeShiftAxis === 'row' ? row : col);
-            }}
-            onSwipeShift={handleShift}
-          />
-
-          {/* Contextual Controls: Word Bar in Spell Mode, Shift Tray in Shift Mode */}
-          {interactionMode === 'spell' ? (
-            <div className="word-bar">
-              <div
-                className={`word-preview ${previewWord ? '' : 'word-preview--empty'}`}
-                aria-live="polite"
-              >
-                {previewWord || 'Tap or drag adjacent letters…'}
-              </div>
-              {selectedPath.length > 0 && (
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => setSelectedPath([])}
-                >
-                  Clear
-                </button>
-              )}
+            {selectedPath.length > 0 && (
               <button
                 type="button"
-                className="btn-primary"
-                disabled={previewWord.length < DEFAULT_ECONOMY.minWordLength || state.dailyComplete}
-                onClick={handleSubmitWord}
+                className="btn-secondary"
+                onClick={() => setSelectedPath([])}
               >
-                Submit
+                Clear
               </button>
-            </div>
-          ) : (
-            <ShiftTray
-              axis={activeShiftAxis}
-              index={activeShiftIndex}
-              shiftTokens={state.shiftTokens}
-              onChangeAxis={setActiveShiftAxis}
-              onChangeIndex={setActiveShiftIndex}
-              onShift={handleShift}
-            />
-          )}
+            )}
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={previewWord.length < DEFAULT_ECONOMY.minWordLength || state.dailyComplete}
+              onClick={handleSubmitWord}
+            >
+              Submit
+            </button>
+          </div>
 
           {/* Live Feedback Toast */}
           {toast && (
