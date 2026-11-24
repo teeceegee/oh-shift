@@ -1,20 +1,34 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getBundledDictionary } from './data/loadDictionary';
 import {
+  createDailyGame,
   createNewGame,
   DEFAULT_ECONOMY,
   dispatchAction,
+  formatDailyShareSummary,
   getBoardLetterCounts,
+  getLocalDateKey,
+  getMilestoneLabel,
   isBoardDeadlocked,
   isPhaseReadyToAdvance,
 } from './engine';
-import type { Coord, GameAction, GameState, ShiftAxis, ShiftOp } from './engine';
+import type { Coord, DifficultyPreset, GameAction, GameState, ShiftAxis, ShiftOp } from './engine';
+import {
+  createEmptyRecords,
+  loadGameState,
+  loadLifetimeRecords,
+  recordGameSnapshot,
+  saveGameState,
+  type LifetimeRecords,
+} from './storage/db';
 import { BoardGrid } from './ui/components/BoardGrid';
 import { BottomSheet } from './ui/components/BottomSheet';
 import { DeductionPanel } from './ui/components/DeductionPanel';
 import { HistorySheet } from './ui/components/HistorySheet';
+import { MenuSheet } from './ui/components/MenuSheet';
 import { RulesSheet } from './ui/components/RulesSheet';
 import { ShiftTray } from './ui/components/ShiftTray';
+import { StatsSheet } from './ui/components/StatsSheet';
 
 interface ToastState {
   text: string;
@@ -28,13 +42,20 @@ function getInitialTheme(): 'light' | 'dark' {
   return 'light';
 }
 
+function makeRandomSeed(): string {
+  return `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
 export function App() {
   const dict = useMemo(() => getBundledDictionary(), []);
+  const todayKey = useMemo(() => getLocalDateKey(), []);
 
   const [theme, setTheme] = useState<'light' | 'dark'>(getInitialTheme);
   const [state, setState] = useState<GameState>(() =>
     createNewGame({ seed: 'oh-shift-solo-1', mode: 'solo', difficulty: 'standard', dict }),
   );
+  const [records, setRecords] = useState<LifetimeRecords>(createEmptyRecords);
+  const [hydrated, setHydrated] = useState(false);
 
   const [interactionMode, setInteractionMode] = useState<'spell' | 'shift'>('spell');
   const [selectedPath, setSelectedPath] = useState<Coord[]>([]);
@@ -45,6 +66,8 @@ export function App() {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [statsOpen, setStatsOpen] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
 
   // Sync theme attribute on document root
@@ -52,12 +75,38 @@ export function App() {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
 
-  // Ensure activeTargetId stays valid after phase transitions
+  // Hydrate saved Endless run & lifetime records from IndexedDB on mount
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [savedSolo, savedRecords] = await Promise.all([
+        loadGameState('solo'),
+        loadLifetimeRecords(),
+      ]);
+      if (cancelled) return;
+      if (savedSolo) {
+        setState(savedSolo);
+      }
+      setRecords(savedRecords);
+      setHydrated(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Ensure activeTargetId stays valid after phase transitions or mode switches
   useEffect(() => {
     if (!state.targets.some((t) => t.id === activeTargetId) && state.targets.length > 0) {
       setActiveTargetId(state.targets[0].id);
     }
   }, [state.targets, activeTargetId]);
+
+  const persistState = (next: GameState) => {
+    if (!hydrated) return;
+    void saveGameState(next);
+    void recordGameSnapshot(next).then(setRecords);
+  };
 
   const boardLetters = useMemo(() => getBoardLetterCounts(state.board), [state.board]);
   const deadlocked = useMemo(() => isBoardDeadlocked(state, dict), [state, dict]);
@@ -78,6 +127,7 @@ export function App() {
     }
 
     setState(res.state);
+    persistState(res.state);
 
     for (const ev of res.events) {
       if (ev.type === 'TARGET_SOLVED_ON_BOARD') {
@@ -104,15 +154,69 @@ export function App() {
           tone: 'info',
         });
       } else if (ev.type === 'PHASE_ADVANCED') {
+        const milestone = getMilestoneLabel(res.state.stats.phasesCleared);
         setToast({
           text: ev.dailyComplete
             ? `Daily Challenge Complete! (+${ev.phaseBonus} pts)`
-            : `Welcome to Phase ${ev.newPhase}! (+${ev.phaseBonus} phase bonus)`,
+            : milestone
+              ? `${milestone} Welcome to Phase ${ev.newPhase}!`
+              : `Welcome to Phase ${ev.newPhase}! (+${ev.phaseBonus} phase bonus)`,
           tone: 'bonus',
         });
       }
     }
     return true;
+  };
+
+  const handleSwitchMode = async (mode: 'solo' | 'daily') => {
+    setSelectedPath([]);
+    setMobileDrawerOpen(false);
+    if (mode === 'daily') {
+      const savedDaily = await loadGameState(`daily:${todayKey}`);
+      const next = savedDaily ?? createDailyGame(todayKey, dict);
+      setState(next);
+      void saveGameState(next);
+      setToast({ text: `Daily 5-Phase Challenge (${todayKey})`, tone: 'info' });
+    } else {
+      const savedSolo = await loadGameState('solo');
+      const next =
+        savedSolo ?? createNewGame({ seed: makeRandomSeed(), mode: 'solo', difficulty: 'standard', dict });
+      setState(next);
+      void saveGameState(next);
+      setToast({ text: `Resumed Endless Run (Phase ${next.phase})`, tone: 'info' });
+    }
+  };
+
+  const handleStartNewEndless = (difficulty: DifficultyPreset, customSeed?: string) => {
+    setSelectedPath([]);
+    setMobileDrawerOpen(false);
+    const seed = customSeed || makeRandomSeed();
+    const fresh = createNewGame({ seed, mode: 'solo', difficulty, dict });
+    setState(fresh);
+    persistState(fresh);
+    setToast({ text: `Started new ${difficulty} Endless Run (Seed: ${seed})`, tone: 'info' });
+  };
+
+  const handleImportState = (imported: GameState) => {
+    setSelectedPath([]);
+    setMobileDrawerOpen(false);
+    setState(imported);
+    persistState(imported);
+    setToast({ text: `Restored saved run (Phase ${imported.phase}, ${imported.score} pts)`, tone: 'bonus' });
+  };
+
+  const handleShareDaily = async () => {
+    const summary = formatDailyShareSummary(state);
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'Oh! Shift Daily', text: summary });
+      } else {
+        await navigator.clipboard.writeText(summary);
+        setToast({ text: 'Daily result copied to clipboard!', tone: 'bonus' });
+      }
+    } catch {
+      setToast({ text: 'Could not share — try copying from Statistics.', tone: 'error' });
+    }
   };
 
   const handleSubmitWord = () => {
@@ -152,6 +256,22 @@ export function App() {
           <button
             type="button"
             className="icon-btn"
+            onClick={() => setMenuOpen(true)}
+            aria-label="Game menu and mode switcher"
+          >
+            Menu
+          </button>
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={() => setStatsOpen(true)}
+            aria-label="Statistics and records"
+          >
+            Stats
+          </button>
+          <button
+            type="button"
+            className="icon-btn"
             onClick={() => setHistoryOpen(true)}
             aria-label={`Word history (${state.foundWords.length} words)`}
           >
@@ -163,7 +283,7 @@ export function App() {
             onClick={() => setRulesOpen(true)}
             aria-label="How to play"
           >
-            Rules
+            ?
           </button>
           <button
             type="button"
@@ -199,6 +319,33 @@ export function App() {
           </span>
         </div>
       </section>
+
+      {/* Daily Challenge Complete Summary Banner */}
+      {state.dailyComplete && (
+        <section className="phase-complete-card" aria-label="Daily challenge summary">
+          <div>
+            <div style={{ fontWeight: 700, fontSize: '0.96rem' }}>
+              Daily Challenge Complete! — {state.score} pts
+            </div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+              {state.stats.targetsSolvedByGuess + state.stats.targetsSolvedOnBoard} targets solved ·{' '}
+              {state.stats.targetsSolvedOnBoard} Board Bonuses · {state.stats.totalWordsFound} words
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <button type="button" className="btn-primary" onClick={handleShareDaily}>
+              Share Result
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => void handleSwitchMode('solo')}
+            >
+              Play Endless
+            </button>
+          </div>
+        </section>
+      )}
 
       {/* Main Responsive Play Area */}
       <main className="play-layout">
@@ -275,7 +422,7 @@ export function App() {
               <button
                 type="button"
                 className="btn-primary"
-                disabled={previewWord.length < DEFAULT_ECONOMY.minWordLength}
+                disabled={previewWord.length < DEFAULT_ECONOMY.minWordLength || state.dailyComplete}
                 onClick={handleSubmitWord}
               >
                 Submit
@@ -310,7 +457,7 @@ export function App() {
           )}
 
           {/* Deadlock Rescue Prompt */}
-          {deadlocked && (
+          {deadlocked && !state.dailyComplete && (
             <div className="phase-complete-card" style={{ borderColor: 'var(--accent-warm)' }}>
               <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>
                 No shifts or board words left. Refresh board?
@@ -333,7 +480,9 @@ export function App() {
                   Phase {state.phase} Complete!
                 </div>
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                  3–5 tiles will refresh for Phase {state.phase + 1}.
+                  {state.mode === 'daily' && state.phase >= DEFAULT_ECONOMY.dailyPhaseCount
+                    ? 'Finish today’s Daily Challenge and claim your summary!'
+                    : `3–5 tiles will refresh for Phase ${state.phase + 1}.`}
                 </div>
               </div>
               <button
@@ -341,7 +490,9 @@ export function App() {
                 className="btn-primary"
                 onClick={() => runAction({ type: 'ADVANCE_PHASE' })}
               >
-                Next Phase →
+                {state.mode === 'daily' && state.phase >= DEFAULT_ECONOMY.dailyPhaseCount
+                  ? 'Finish Daily ★'
+                  : 'Next Phase →'}
               </button>
             </div>
           )}
@@ -373,11 +524,9 @@ export function App() {
                     onClick={() => handleSelectTargetChip(target.id)}
                   >
                     <span className="target-chip-title">
-                      {isSolved
+                      {isSolved || target.status === 'revealed'
                         ? target.answer
-                        : target.status === 'revealed'
-                          ? target.answer
-                          : `Target ${idx + 1}`}
+                        : `Target ${idx + 1}`}
                     </span>
                     <span className="target-chip-meta">
                       {target.status === 'solved_board'
@@ -437,6 +586,22 @@ export function App() {
             onRevealTarget={(targetId) => runAction({ type: 'REVEAL_TARGET', targetId })}
           />
         </BottomSheet>
+      )}
+
+      {menuOpen && (
+        <MenuSheet
+          state={state}
+          todayKey={todayKey}
+          onSwitchMode={(m) => void handleSwitchMode(m)}
+          onStartNewEndless={handleStartNewEndless}
+          onImportState={handleImportState}
+          onRescueRefresh={() => runAction({ type: 'RESCUE_REFRESH' })}
+          onClose={() => setMenuOpen(false)}
+        />
+      )}
+
+      {statsOpen && (
+        <StatsSheet state={state} records={records} onClose={() => setStatsOpen(false)} />
       )}
 
       {historyOpen && (

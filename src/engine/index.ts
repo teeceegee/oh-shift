@@ -7,3 +7,4 @@ export * from './deduction';
 export * from './generator';
 export * from './deadlock';
 export * from './reducer';
+export * from './daily';
