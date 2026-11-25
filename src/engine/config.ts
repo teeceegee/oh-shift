@@ -4,6 +4,7 @@ export const SCHEMA_VERSION = 4;
 export const BOARD_SIZE = 5;
 
 export const DEFAULT_ECONOMY: EconomyConfig = {
+  shiftCost: 1,
   scoreThreeLetter: 10,
   scoreFourLetter: 25,
   scoreFiveLetter: 50,

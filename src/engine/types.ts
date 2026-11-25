@@ -42,6 +42,7 @@ export interface SavedWordRecord {
 }
 
 export interface EconomyConfig {
+  shiftCost: number;
   scoreThreeLetter: number;
   scoreFourLetter: number;
   scoreFiveLetter: number;

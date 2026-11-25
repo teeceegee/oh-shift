@@ -118,6 +118,10 @@ button:disabled {
   gap: 6px;
 }
 
+.hud-strip--two {
+  grid-template-columns: repeat(2, 1fr);
+}
+
 .hud-card {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);

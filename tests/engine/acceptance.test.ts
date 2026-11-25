@@ -30,23 +30,24 @@ describe('Oh! Shift v4 — Deliberate 1-Tap First-Letter Word Claiming', () => {
     ];
     const state = { ...base, board };
 
-    // Shift row 0 left -> spells PLANT, but must NOT fire until player taps 'P'!
+    // Shift row 0 left -> costs 1 pt (score = -1) and spells PLANT, but does NOT auto-claim!
     const shifted = dispatchAction(
       state,
       { type: 'SHIFT', op: { axis: 'row', index: 0, direction: 'left' } },
       dict,
     );
     expect(shifted.flash).toBeNull();
+    expect(shifted.state.score).toBe(-DEFAULT_ECONOMY.shiftCost);
     expect(shifted.state.board[0].join('')).toBe('PLANT');
     expect(shifted.state.savedWords).toHaveLength(0);
 
-    // Now tap the first letter 'P' at (0, 0) -> claims PLANT, flashes, saves, replaces!
+    // Now tap the first letter 'P' at (0, 0) -> claims PLANT (+50), net score = 49!
     const claimed = dispatchAction(shifted.state, { type: 'CLAIM_AT', coord: { row: 0, col: 0 } }, dict);
     expect(claimed.error).toBeUndefined();
     expect(claimed.flash).not.toBeNull();
     expect(claimed.flash!.matches[0].word).toBe('PLANT');
     expect(claimed.state.savedWords[0].word).toBe('PLANT');
-    expect(claimed.state.score).toBe(DEFAULT_ECONOMY.scoreFiveLetter);
+    expect(claimed.state.score).toBe(DEFAULT_ECONOMY.scoreFiveLetter - DEFAULT_ECONOMY.shiftCost);
     expect(claimed.state.board[0].join('')).not.toBe('PLANT');
   });
 
@@ -105,8 +106,10 @@ describe('Oh! Shift v4 — Deliberate 1-Tap First-Letter Word Claiming', () => {
 
     const state = createNewGame({ seed: 'undo-test', dict });
     const s1 = dispatchAction(state, { type: 'SHIFT', op: { axis: 'col', index: 1, direction: 'down' } }, dict);
+    expect(s1.state.score).toBe(-1);
     const u1 = dispatchAction(s1.state, { type: 'UNDO_SHIFT' }, dict);
     expect(u1.state.board).toEqual(state.board);
+    expect(u1.state.score).toBe(0);
     expect(u1.state.shiftsMade).toBe(0);
   });
 

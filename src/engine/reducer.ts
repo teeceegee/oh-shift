@@ -87,6 +87,7 @@ export function dispatchAction(
         state: {
           ...state,
           board: nextBoard,
+          score: state.score - config.shiftCost,
           shiftsMade: nextShiftNumber,
           lastShiftUndoable: action.op,
           dailyComplete,
@@ -197,6 +198,7 @@ export function dispatchAction(
         state: {
           ...state,
           board: revertedBoard,
+          score: state.score + config.shiftCost,
           shiftsMade: nextShifts,
           lastShiftUndoable: null,
           dailyComplete: false,

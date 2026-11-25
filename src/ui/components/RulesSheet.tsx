@@ -16,11 +16,11 @@ export function RulesSheet({ onClose }: RulesSheetProps) {
         </p>
 
         <div>
-          <strong>1. Unlimited Shifts</strong>
+          <strong>1. Shifting (−{DEFAULT_ECONOMY.shiftCost} pt per shift)</strong>
           <ul style={{ margin: '4px 0 0', paddingLeft: '18px' }}>
             <li>Tap any red edge arrow (<strong>◀ ▶ ▲ ▼</strong>) to slide that row or column with wraparound.</li>
-            <li>Nothing fires accidentally while you shift — take as many shifts as you need to line up the exact word you want!</li>
-            <li>Tap <strong>↶ Undo</strong> to step back your last shift.</li>
+            <li>Each shift deducts <strong>1 point</strong> from your score (negative scores are permitted, so you are never blocked).</li>
+            <li>Tap <strong>↶ Undo</strong> to step back your last shift and refund the point.</li>
           </ul>
         </div>
 

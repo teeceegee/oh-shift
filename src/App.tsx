@@ -289,22 +289,27 @@ export function App() {
 
       <PwaUpdateBanner />
 
-      {/* Clean 3-Card HUD */}
-      <section className="hud-strip" aria-label="Game status">
+      {/* Clean HUD: Score & Words (plus Shifts Left in Daily mode) */}
+      <section
+        className={`hud-strip ${state.mode === 'daily' ? '' : 'hud-strip--two'}`}
+        aria-label="Game status"
+      >
         <div className="hud-card">
           <span className="hud-label">Score</span>
-          <span className="hud-value">{state.score}</span>
+          <span className={`hud-value ${state.score < 0 ? 'hud-value--shifts' : ''}`}>
+            {state.score}
+          </span>
         </div>
         <div className="hud-card">
           <span className="hud-label">Words</span>
           <span className="hud-value hud-value--insight">{state.stats.totalWordsFound}</span>
         </div>
-        <div className="hud-card">
-          <span className="hud-label">{state.mode === 'daily' ? 'Shifts Left' : 'Shifts'}</span>
-          <span className="hud-value hud-value--shifts">
-            {state.mode === 'daily' ? shiftsRemaining : state.shiftsMade}
-          </span>
-        </div>
+        {state.mode === 'daily' && (
+          <div className="hud-card">
+            <span className="hud-label">Shifts Left</span>
+            <span className="hud-value hud-value--shifts">{shiftsRemaining}</span>
+          </div>
+        )}
       </section>
 
       {/* Daily Challenge Complete Banner */}
