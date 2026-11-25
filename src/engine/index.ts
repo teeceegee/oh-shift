@@ -3,8 +3,6 @@ export * from './config';
 export * from './prng';
 export * from './dictionary';
 export * from './board';
-export * from './deduction';
 export * from './generator';
-export * from './deadlock';
 export * from './reducer';
 export * from './daily';

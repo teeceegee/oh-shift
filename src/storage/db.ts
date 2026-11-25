@@ -1,40 +1,39 @@
 import { SCHEMA_VERSION } from '../engine/config';
-import type { DifficultyPreset, GameMode, GameState } from '../engine/types';
+import type { GameMode, GameState, MinMatchLength } from '../engine/types';
 
 const DB_NAME = 'oh-shift-db';
 const DB_VERSION = 1;
 const STORE_SAVES = 'saves';
 const STORE_META = 'meta';
-const META_KEY_RECORDS = 'lifetime_records';
+const META_KEY_RECORDS = 'lifetime_records_v3';
 
 export interface RunSummary {
   gameId: string;
   mode: GameMode;
-  difficulty: DifficultyPreset;
+  minMatchLength: MinMatchLength;
   seed: string;
   score: number;
-  phasesCleared: number;
+  shiftsMade: number;
   wordsFound: number;
-  longestWord: string;
-  targetsSolved: number;
-  directSolves: number;
+  fiveLetterWords: number;
+  bestCombo: number;
   savedAt: string;
 }
 
 export interface LifetimeRecords {
   bestEndlessScore: number;
-  highestPhaseReached: number;
+  bestDailyScore: number;
+  bestComboEver: number;
   dailiesCompleted: string[];
-  longestWordEver: string;
   recentRuns: RunSummary[];
 }
 
 export function createEmptyRecords(): LifetimeRecords {
   return {
     bestEndlessScore: 0,
-    highestPhaseReached: 1,
+    bestDailyScore: 0,
+    bestComboEver: 0,
     dailiesCompleted: [],
-    longestWordEver: '',
     recentRuns: [],
   };
 }
@@ -94,7 +93,7 @@ async function idbPut<T>(storeName: string, key: string, value: T): Promise<void
     try {
       localStorage.setItem(`${DB_NAME}:${storeName}:${key}`, JSON.stringify(value));
     } catch {
-      // Ignore quota errors in private mode
+      // Ignore quota errors
     }
     return;
   }
@@ -128,7 +127,7 @@ export async function saveGameState(state: GameState): Promise<void> {
 export async function loadGameState(slot: string): Promise<GameState | null> {
   const loaded = await idbGet<GameState>(STORE_SAVES, slot);
   if (!loaded || typeof loaded !== 'object') return null;
-  if (loaded.schemaVersion !== SCHEMA_VERSION || !Array.isArray(loaded.board) || !loaded.target) {
+  if (loaded.schemaVersion !== SCHEMA_VERSION || !Array.isArray(loaded.board)) {
     return null;
   }
   return loaded;
@@ -148,11 +147,11 @@ export async function recordGameSnapshot(state: GameState): Promise<LifetimeReco
       state.mode === 'solo'
         ? Math.max(current.bestEndlessScore, state.score)
         : current.bestEndlessScore,
-    highestPhaseReached: Math.max(current.highestPhaseReached, state.phase),
-    longestWordEver:
-      state.stats.longestWord.length > current.longestWordEver.length
-        ? state.stats.longestWord
-        : current.longestWordEver,
+    bestDailyScore:
+      state.mode === 'daily'
+        ? Math.max(current.bestDailyScore, state.score)
+        : current.bestDailyScore,
+    bestComboEver: Math.max(current.bestComboEver, state.stats.bestCombo),
     dailiesCompleted:
       state.mode === 'daily' && state.dailyComplete
         ? Array.from(new Set([...current.dailiesCompleted, state.seed.replace(/^daily-/, '')])).sort()
@@ -168,14 +167,13 @@ function upsertRunSummary(runs: readonly RunSummary[], state: GameState): RunSum
   const summary: RunSummary = {
     gameId: state.gameId,
     mode: state.mode,
-    difficulty: state.difficulty,
+    minMatchLength: state.minMatchLength,
     seed: state.seed,
     score: state.score,
-    phasesCleared: state.stats.phasesCleared,
+    shiftsMade: state.shiftsMade,
     wordsFound: state.stats.totalWordsFound,
-    longestWord: state.stats.longestWord,
-    targetsSolved: state.stats.targetsSolved,
-    directSolves: state.stats.directSolves,
+    fiveLetterWords: state.stats.fiveLetterWords,
+    bestCombo: state.stats.bestCombo,
     savedAt: state.updatedAt,
   };
 
@@ -183,7 +181,7 @@ function upsertRunSummary(runs: readonly RunSummary[], state: GameState): RunSum
   return [summary, ...filtered].slice(0, 20);
 }
 
-const SAVE_CODE_PREFIX = 'OS2:';
+const SAVE_CODE_PREFIX = 'OS3:';
 
 export function encodeSaveCode(state: GameState): string {
   const json = JSON.stringify(state);
@@ -199,7 +197,7 @@ export function encodeSaveCode(state: GameState): string {
 export function decodeSaveCode(code: string): { state?: GameState; error?: string } {
   const trimmed = code.trim();
   if (!trimmed.startsWith(SAVE_CODE_PREFIX)) {
-    return { error: 'Invalid Save Code prefix (expected OS2:...)' };
+    return { error: 'Invalid Save Code prefix (expected OS3:...)' };
   }
 
   try {
@@ -218,7 +216,7 @@ export function decodeSaveCode(code: string): { state?: GameState; error?: strin
       typeof parsed.seed !== 'string' ||
       !Array.isArray(parsed.board) ||
       parsed.board.length !== 5 ||
-      !parsed.target
+      !Array.isArray(parsed.savedWords)
     ) {
       return { error: 'Save Code is corrupted or from an incompatible version' };
     }

@@ -957,3 +957,128 @@ button:disabled {
     display: none;
   }
 }
+
+/* v3 Auto-Spot Tile Flash & Fresh Replacement Animations */
+.tile-btn--static {
+  cursor: default;
+}
+
+@keyframes tileFlashPulse {
+  0% {
+    background: var(--bg-tile);
+    color: var(--text-primary);
+    transform: scale(1);
+  }
+  25% {
+    background: var(--state-exact-bg);
+    border-color: var(--state-exact-border);
+    color: #fff;
+    transform: scale(1.07);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--state-exact-bg) 45%, transparent);
+  }
+  55% {
+    background: var(--state-present-bg);
+    border-color: var(--state-present-border);
+    color: #fff;
+    transform: scale(1.04);
+  }
+  80% {
+    background: var(--state-exact-bg);
+    border-color: var(--state-exact-border);
+    color: #fff;
+    transform: scale(1.06);
+  }
+  100% {
+    background: var(--state-exact-bg);
+    border-color: var(--state-exact-border);
+    color: #fff;
+    transform: scale(1);
+  }
+}
+
+@keyframes tileFreshPop {
+  0% {
+    opacity: 0.25;
+    transform: scale(0.72);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.tile-btn--flash {
+  animation: tileFlashPulse 520ms ease-in-out forwards;
+  z-index: 4;
+}
+
+.tile-btn--fresh {
+  animation: tileFreshPop 220ms cubic-bezier(0.2, 0.9, 0.3, 1.1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile-btn--flash {
+    animation: none;
+    background: var(--state-exact-bg);
+    border-color: var(--state-exact-border);
+    color: #fff;
+  }
+
+  .tile-btn--fresh {
+    animation: none;
+  }
+}
+
+/* Saved Words Collection Grid */
+.saved-words-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.saved-words-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.saved-word-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  font-size: 0.84rem;
+}
+
+.saved-word-chip--five {
+  border-color: var(--state-exact-bg);
+  background: color-mix(in srgb, var(--state-exact-bg) 12%, var(--bg-surface));
+}
+
+.saved-word-text {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.saved-word-meta {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.action-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+}

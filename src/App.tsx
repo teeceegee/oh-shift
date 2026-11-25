@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { getBundledDictionary } from './data/loadDictionary';
 import {
   createDailyGame,
@@ -7,11 +7,8 @@ import {
   dispatchAction,
   formatDailyShareSummary,
   getLocalDateKey,
-  getMilestoneLabel,
-  isBoardDeadlocked,
-  isPhaseReadyToAdvance,
 } from './engine';
-import type { Coord, DifficultyPreset, GameAction, GameState, ShiftOp } from './engine';
+import type { Coord, GameState, MinMatchLength, ShiftOp } from './engine';
 import {
   createEmptyRecords,
   loadGameState,
@@ -23,11 +20,10 @@ import {
 import { BoardGrid } from './ui/components/BoardGrid';
 import { HistorySheet } from './ui/components/HistorySheet';
 import { MenuSheet } from './ui/components/MenuSheet';
-import { ProbeHistory } from './ui/components/ProbeHistory';
 import { PwaUpdateBanner } from './ui/components/PwaUpdateBanner';
 import { RulesSheet } from './ui/components/RulesSheet';
+import { SavedWordsList } from './ui/components/SavedWordsList';
 import { StatsSheet } from './ui/components/StatsSheet';
-import { TargetWordBar } from './ui/components/TargetWordBar';
 
 interface ToastState {
   text: string;
@@ -45,19 +41,28 @@ function makeRandomSeed(): string {
   return `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 export function App() {
   const dict = useMemo(() => getBundledDictionary(), []);
   const todayKey = useMemo(() => getLocalDateKey(), []);
 
   const [theme, setTheme] = useState<'light' | 'dark'>(getInitialTheme);
   const [state, setState] = useState<GameState>(() =>
-    createNewGame({ seed: 'oh-shift-solo-v2', mode: 'solo', difficulty: 'standard', dict }),
+    createNewGame({ seed: 'oh-shift-v3', mode: 'solo', minMatchLength: 4, dict }),
   );
   const [records, setRecords] = useState<LifetimeRecords>(createEmptyRecords);
   const [hydrated, setHydrated] = useState(false);
 
-  const [selectedPath, setSelectedPath] = useState<Coord[]>([]);
-  const [lastPopulatedIndices, setLastPopulatedIndices] = useState<number[]>([]);
+  // Animation display state for the Flash -> Replace -> Cascade beat
+  const [displayBoard, setDisplayBoard] = useState<string[][] | null>(null);
+  const [flashingCoords, setFlashingCoords] = useState<Coord[]>([]);
+  const [freshCoords, setFreshCoords] = useState<Coord[]>([]);
+  const [animating, setAnimating] = useState(false);
+  const animTokenRef = useRef(0);
+
   const [historyOpen, setHistoryOpen] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -93,102 +98,114 @@ export function App() {
     void recordGameSnapshot(next).then(setRecords);
   };
 
-  const deadlocked = useMemo(() => isBoardDeadlocked(state, dict), [state, dict]);
-  const phaseReady = useMemo(() => isPhaseReadyToAdvance(state), [state]);
-  const previewWord = selectedPath.map(({ row, col }) => state.board[row][col]).join('');
-  const populatedCount = state.target.revealedPositions.filter(Boolean).length;
+  const resetAnimation = () => {
+    animTokenRef.current += 1;
+    setDisplayBoard(null);
+    setFlashingCoords([]);
+    setFreshCoords([]);
+    setAnimating(false);
+  };
 
-  const runAction = (action: GameAction): boolean => {
-    const res = dispatchAction(state, action, dict);
+  const handleShift = async (op: ShiftOp) => {
+    if (animating || state.dailyComplete) return;
+
+    const res = dispatchAction(state, { type: 'SHIFT', op }, dict);
     if (res.error) {
       setToast({ text: res.error, tone: 'error' });
-      return false;
+      return;
     }
 
+    // Fast path: no words matched — instant shift!
+    if (res.cascades.length === 0) {
+      setState(res.state);
+      persistState(res.state);
+      return;
+    }
+
+    // Play the Flash -> Replace -> Cascade sequence
+    const myToken = ++animTokenRef.current;
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const flashMs = reducedMotion ? 160 : 520;
+    const popMs = reducedMotion ? 80 : 220;
+
+    setAnimating(true);
+
+    for (const step of res.cascades) {
+      if (animTokenRef.current !== myToken) return;
+
+      const wordsLabel = step.matches.map((m) => m.word).join(' + ');
+      const comboText = step.stepNumber > 1 ? ` · ${step.stepNumber}× Combo!` : '';
+      setToast({
+        text: `${wordsLabel} (+${step.stepScore} pts${comboText})`,
+        tone: 'bonus',
+      });
+
+      // 1. Flash the matched horizontal/vertical tiles
+      setFreshCoords([]);
+      setDisplayBoard(step.boardBeforeReplace);
+      setFlashingCoords(step.matchedCoords);
+      await sleep(flashMs);
+      if (animTokenRef.current !== myToken) return;
+
+      // 2. Replace matched tiles with fresh letters
+      setFlashingCoords([]);
+      setDisplayBoard(step.boardAfterReplace);
+      setFreshCoords(step.matchedCoords);
+      await sleep(popMs);
+      if (animTokenRef.current !== myToken) return;
+    }
+
+    setDisplayBoard(null);
+    setFlashingCoords([]);
+    setFreshCoords([]);
+    setAnimating(false);
     setState(res.state);
     persistState(res.state);
+  };
 
-    for (const ev of res.events) {
-      if (ev.type === 'TARGET_SOLVED') {
-        setToast({
-          text: ev.direct
-            ? `Direct Solve! "${ev.word}" (+${ev.bonusScore} pts, +${ev.bonusShifts} Shift)`
-            : `Target Populated! "${ev.word}" (+${ev.bonusScore} pts)`,
-          tone: 'bonus',
-        });
-      } else if (ev.type === 'WORD_ACCEPTED') {
-        setLastPopulatedIndices(ev.newlyPopulatedIndices);
-        const parts = [`+${ev.scoreDelta} pts`];
-        if (ev.newlyPopulatedIndices.length > 0) {
-          parts.push(
-            `locked ${ev.newlyPopulatedIndices.length} target ${
-              ev.newlyPopulatedIndices.length === 1 ? 'letter' : 'letters'
-            }!`,
-          );
-        }
-        if (ev.shiftsEarned > 0) {
-          parts.push(`+${ev.shiftsEarned} Shift`);
-        }
-        setToast({
-          text: `"${ev.word}" — ${parts.join(' · ')}`,
-          tone: ev.newlyPopulatedIndices.length > 0 ? 'bonus' : 'info',
-        });
-      } else if (ev.type === 'RESCUE_APPLIED') {
-        setToast({
-          text: `Board refreshed (${ev.replacedCount} tiles, +1 Shift, −${ev.penalty} pts)`,
-          tone: 'info',
-        });
-      } else if (ev.type === 'PHASE_ADVANCED') {
-        setLastPopulatedIndices([]);
-        const milestone = getMilestoneLabel(res.state.stats.phasesCleared);
-        setToast({
-          text: ev.dailyComplete
-            ? `Daily Challenge Complete! (+${ev.phaseBonus} pts)`
-            : milestone
-              ? `${milestone} Welcome to Phase ${ev.newPhase}!`
-              : `Welcome to Phase ${ev.newPhase}! (+${ev.phaseBonus} phase bonus)`,
-          tone: 'bonus',
-        });
-      }
-    }
-    return true;
+  const handleUndo = () => {
+    if (animating) return;
+    const res = dispatchAction(state, { type: 'UNDO_SHIFT' }, dict);
+    if (res.error) return;
+    setState(res.state);
+    persistState(res.state);
   };
 
   const handleSwitchMode = async (mode: 'solo' | 'daily') => {
-    setSelectedPath([]);
-    setLastPopulatedIndices([]);
+    resetAnimation();
     if (mode === 'daily') {
       const savedDaily = await loadGameState(`daily:${todayKey}`);
-      const next = savedDaily ?? createDailyGame(todayKey, dict);
+      const next = savedDaily ?? createDailyGame(todayKey, dict, 4);
       setState(next);
       void saveGameState(next);
-      setToast({ text: `Daily 5-Phase Challenge (${todayKey})`, tone: 'info' });
+      setToast({ text: `Daily ${DEFAULT_ECONOMY.dailyShiftLimit}-Shift Challenge (${todayKey})`, tone: 'info' });
     } else {
       const savedSolo = await loadGameState('solo');
       const next =
-        savedSolo ?? createNewGame({ seed: makeRandomSeed(), mode: 'solo', difficulty: 'standard', dict });
+        savedSolo ?? createNewGame({ seed: makeRandomSeed(), mode: 'solo', minMatchLength: 4, dict });
       setState(next);
       void saveGameState(next);
-      setToast({ text: `Resumed Endless Run (Phase ${next.phase})`, tone: 'info' });
+      setToast({ text: 'Resumed Endless Board', tone: 'info' });
     }
   };
 
-  const handleStartNewEndless = (difficulty: DifficultyPreset, customSeed?: string) => {
-    setSelectedPath([]);
-    setLastPopulatedIndices([]);
+  const handleStartNewEndless = (minMatchLength: MinMatchLength, customSeed?: string) => {
+    resetAnimation();
     const seed = customSeed || makeRandomSeed();
-    const fresh = createNewGame({ seed, mode: 'solo', difficulty, dict });
+    const fresh = createNewGame({ seed, mode: 'solo', minMatchLength, dict });
     setState(fresh);
     persistState(fresh);
-    setToast({ text: `Started new ${difficulty} Endless Run`, tone: 'info' });
+    setToast({
+      text: `New ${minMatchLength === 5 ? '5-Letter' : '4 & 5-Letter'} Endless Board`,
+      tone: 'info',
+    });
   };
 
   const handleImportState = (imported: GameState) => {
-    setSelectedPath([]);
-    setLastPopulatedIndices([]);
+    resetAnimation();
     setState(imported);
     persistState(imported);
-    setToast({ text: `Restored saved run (Phase ${imported.phase}, ${imported.score} pts)`, tone: 'bonus' });
+    setToast({ text: `Restored saved board (${imported.score} pts)`, tone: 'bonus' });
   };
 
   const handleShareDaily = async () => {
@@ -201,22 +218,15 @@ export function App() {
         setToast({ text: 'Daily result copied to clipboard!', tone: 'bonus' });
       }
     } catch {
-      setToast({ text: 'Could not share — try copying from Statistics.', tone: 'error' });
+      setToast({ text: 'Could not share result.', tone: 'error' });
     }
   };
 
-  const handleSubmitWord = () => {
-    if (selectedPath.length === 0) return;
-    const ok = runAction({ type: 'SUBMIT_WORD', path: selectedPath });
-    if (ok) {
-      setSelectedPath([]);
-    }
-  };
-
-  const handleShift = (op: ShiftOp) => {
-    setSelectedPath([]);
-    runAction({ type: 'SHIFT', op });
-  };
+  const activeBoard = displayBoard ?? state.board;
+  const shiftsRemaining =
+    state.mode === 'daily'
+      ? Math.max(0, DEFAULT_ECONOMY.dailyShiftLimit - state.shiftsMade)
+      : null;
 
   return (
     <div className="app-shell">
@@ -225,7 +235,11 @@ export function App() {
         <div className="brand-group">
           <h1 className="brand-title">Oh! Shift</h1>
           <span className="mode-badge">
-            {state.mode === 'daily' ? `Daily · P${state.phase}/5` : `Phase ${state.phase}`}
+            {state.mode === 'daily'
+              ? `Daily · ${shiftsRemaining} left`
+              : state.minMatchLength === 5
+                ? '5-Letter'
+                : 'Endless'}
           </span>
         </div>
 
@@ -250,9 +264,9 @@ export function App() {
             type="button"
             className="icon-btn"
             onClick={() => setHistoryOpen(true)}
-            aria-label={`Word history (${state.foundWords.length} words)`}
+            aria-label={`Saved words (${state.savedWords.length})`}
           >
-            Words ({state.foundWords.length})
+            Words ({state.savedWords.length})
           </button>
           <button
             type="button"
@@ -275,36 +289,34 @@ export function App() {
 
       <PwaUpdateBanner />
 
-      {/* Clean 3-Card HUD (Score, Shifts, Target Progress — no Insight) */}
+      {/* Clean 3-Card HUD */}
       <section className="hud-strip" aria-label="Game status">
         <div className="hud-card">
           <span className="hud-label">Score</span>
           <span className="hud-value">{state.score}</span>
         </div>
         <div className="hud-card">
-          <span className="hud-label">Shifts</span>
-          <span className="hud-value hud-value--shifts">
-            {state.shiftTokens}/{DEFAULT_ECONOMY.maxShiftTokens}
-          </span>
+          <span className="hud-label">Words</span>
+          <span className="hud-value hud-value--insight">{state.stats.totalWordsFound}</span>
         </div>
         <div className="hud-card">
-          <span className="hud-label">Target</span>
-          <span className="hud-value hud-value--insight">
-            {populatedCount}/{state.target.length}
+          <span className="hud-label">{state.mode === 'daily' ? 'Shifts Left' : 'Shifts'}</span>
+          <span className="hud-value hud-value--shifts">
+            {state.mode === 'daily' ? shiftsRemaining : state.shiftsMade}
           </span>
         </div>
       </section>
 
-      {/* Daily Challenge Complete Summary Banner */}
+      {/* Daily Challenge Complete Banner */}
       {state.dailyComplete && (
         <section className="phase-complete-card" aria-label="Daily challenge summary">
           <div>
             <div style={{ fontWeight: 700, fontSize: '0.96rem' }}>
-              Daily Challenge Complete! — {state.score} pts
+              Daily Complete! — {state.score} pts
             </div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-              {state.stats.targetsSolved} targets populated · {state.stats.directSolves} Direct
-              Solves · {state.stats.totalWordsFound} words
+              {state.stats.totalWordsFound} words · {state.stats.fiveLetterWords} five-letter · Best
+              Combo {state.stats.bestCombo}×
             </div>
           </div>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -322,125 +334,58 @@ export function App() {
         </section>
       )}
 
-      {/* Main Responsive Unified Play Area */}
+      {/* Main Responsive Play Area */}
       <main className="play-layout">
         <div className="board-column">
-          {/* Single Prominent Target Word Slots */}
-          <TargetWordBar target={state.target} lastPopulatedIndices={lastPopulatedIndices} />
-
-          {/* Phase Complete Advance Banner */}
-          {phaseReady && !state.dailyComplete && (
-            <div className="phase-complete-card">
-              <div>
-                <div style={{ fontWeight: 700, fontSize: '0.92rem' }}>
-                  "{state.target.answer}" Complete!
-                </div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                  {state.mode === 'daily' && state.phase >= DEFAULT_ECONOMY.dailyPhaseCount
-                    ? 'Finish today’s Daily Challenge and claim your summary!'
-                    : `3–5 tiles will refresh for Phase ${state.phase + 1}.`}
-                </div>
-              </div>
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={() => runAction({ type: 'ADVANCE_PHASE' })}
-              >
-                {state.mode === 'daily' && state.phase >= DEFAULT_ECONOMY.dailyPhaseCount
-                  ? 'Finish Daily ★'
-                  : 'Next Phase →'}
-              </button>
-            </div>
-          )}
-
-          {/* 5x5 Tactile Grid with Direct Edge Shift Arrows */}
+          {/* 5x5 Tactile Grid with Unlimited Direct Edge Shift Arrows */}
           <BoardGrid
-            board={state.board}
-            selectedPath={selectedPath}
-            shiftTokens={state.shiftTokens}
-            disabled={state.dailyComplete}
-            onPathChange={setSelectedPath}
-            onShift={handleShift}
+            board={activeBoard}
+            flashingCoords={flashingCoords}
+            freshCoords={freshCoords}
+            disabled={animating || state.dailyComplete}
+            onShift={(op) => void handleShift(op)}
           />
 
-          {/* Word Preview Bar + Inline Shift Undo */}
-          <div className="word-bar">
-            <div
-              className={`word-preview ${previewWord ? '' : 'word-preview--empty'}`}
-              aria-live="polite"
-            >
-              {previewWord || 'Tap or drag letters · arrows shift rows/cols'}
+          {/* Compact Status & Undo Strip */}
+          <div className="action-strip">
+            <div style={{ flex: 1 }}>
+              {toast ? (
+                <div
+                  className={`toast-banner ${
+                    toast.tone === 'error'
+                      ? 'toast-banner--error'
+                      : toast.tone === 'bonus'
+                        ? 'toast-banner--bonus'
+                        : ''
+                  }`}
+                  role="status"
+                  aria-live="polite"
+                >
+                  {toast.text}
+                </div>
+              ) : (
+                <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                  Slide rows or columns to form {state.minMatchLength === 5 ? '5-letter' : '4 or 5-letter'} words (→ or ↓)
+                </span>
+              )}
             </div>
-            {state.uncommittedShifts.length > 0 && selectedPath.length === 0 && (
-              <button
-                type="button"
-                className="undo-btn"
-                onClick={() => runAction({ type: 'UNDO_SHIFT' })}
-              >
-                ↶ Undo ({state.uncommittedShifts.length})
+
+            {state.lastShiftUndoable && !animating && (
+              <button type="button" className="undo-btn" onClick={handleUndo}>
+                ↶ Undo
               </button>
             )}
-            {selectedPath.length > 0 && (
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => setSelectedPath([])}
-              >
-                Clear
-              </button>
-            )}
-            <button
-              type="button"
-              className="btn-primary"
-              disabled={previewWord.length < DEFAULT_ECONOMY.minWordLength || state.dailyComplete}
-              onClick={handleSubmitWord}
-            >
-              Submit
-            </button>
           </div>
 
-          {/* Live Feedback Toast */}
-          {toast && (
-            <div
-              className={`toast-banner ${
-                toast.tone === 'error'
-                  ? 'toast-banner--error'
-                  : toast.tone === 'bonus'
-                    ? 'toast-banner--bonus'
-                    : ''
-              }`}
-              role="status"
-              aria-live="polite"
-            >
-              {toast.text}
-            </div>
-          )}
-
-          {/* Deadlock Rescue Prompt */}
-          {deadlocked && !state.dailyComplete && (
-            <div className="phase-complete-card" style={{ borderColor: 'var(--accent-warm)' }}>
-              <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>
-                No shifts or board words left. Refresh board?
-              </span>
-              <button
-                type="button"
-                className="btn-warm"
-                onClick={() => runAction({ type: 'RESCUE_REFRESH' })}
-              >
-                Rescue (−{DEFAULT_ECONOMY.rescuePenalty} pts)
-              </button>
-            </div>
-          )}
-
-          {/* Recent Word Probes (Portrait Mobile) */}
+          {/* Saved Words (Portrait Mobile) */}
           <div className="mobile-probes-wrap">
-            <ProbeHistory probes={state.probeHistory} maxVisible={5} />
+            <SavedWordsList words={state.savedWords} maxVisible={18} />
           </div>
         </div>
 
-        {/* Right Column (iPad Landscape & Desktop): Live Board Word Probes */}
-        <aside className="side-column" aria-label="Board word feedback log">
-          <ProbeHistory probes={state.probeHistory} maxVisible={14} />
+        {/* Right Column (iPad Landscape & Desktop): Saved Words Collection */}
+        <aside className="side-column" aria-label="Saved words collection">
+          <SavedWordsList words={state.savedWords} maxVisible={40} />
         </aside>
       </main>
 
@@ -451,7 +396,6 @@ export function App() {
           onSwitchMode={(m) => void handleSwitchMode(m)}
           onStartNewEndless={handleStartNewEndless}
           onImportState={handleImportState}
-          onRescueRefresh={() => runAction({ type: 'RESCUE_REFRESH' })}
           onClose={() => setMenuOpen(false)}
         />
       )}
@@ -461,11 +405,7 @@ export function App() {
       )}
 
       {historyOpen && (
-        <HistorySheet
-          phase={state.phase}
-          probes={state.probeHistory}
-          onClose={() => setHistoryOpen(false)}
-        />
+        <HistorySheet words={state.savedWords} onClose={() => setHistoryOpen(false)} />
       )}
 
       {rulesOpen && <RulesSheet onClose={() => setRulesOpen(false)} />}

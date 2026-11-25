@@ -1,6 +1,6 @@
-export type GameMode = 'solo' | 'daily' | 'competitive' | 'cooperative';
+export type GameMode = 'solo' | 'daily';
 
-export type DifficultyPreset = 'relaxed' | 'standard' | 'expert';
+export type MinMatchLength = 4 | 5;
 
 export type ShiftAxis = 'row' | 'col';
 export type ShiftDirection = 'left' | 'right' | 'up' | 'down';
@@ -16,80 +16,50 @@ export interface ShiftOp {
   direction: ShiftDirection;
 }
 
-export type LetterFeedback = 'exact' | 'present' | 'absent';
-
-export interface WordProbeRecord {
+export interface WordMatch {
   word: string;
+  axis: 'horizontal' | 'vertical';
+  coords: Coord[];
   score: number;
-  feedback: LetterFeedback[];
-  newlyPopulatedIndices: number[];
 }
 
-export interface TargetState {
-  answer: string;
-  length: number;
-  parShifts: number;
-  revealedPositions: boolean[];
-  solved: boolean;
-  solvedDirectly: boolean;
+export interface CascadeStep {
+  stepNumber: number; // 1 = initial match, 2+ = cascade combo
+  matches: WordMatch[];
+  matchedCoords: Coord[];
+  boardBeforeReplace: string[][];
+  boardAfterReplace: string[][];
+  stepScore: number;
+}
+
+export interface SavedWordRecord {
+  id: string;
+  word: string;
+  axis: 'horizontal' | 'vertical';
+  score: number;
+  combo: number;
+  shiftNumber: number;
 }
 
 export interface EconomyConfig {
-  minWordLength: number;
-  startingShiftTokens: number;
-  maxShiftTokens: number;
-  wordsPerShiftToken: number;
-  longWordBonusLength: number;
-  rescuePenalty: number;
-  targetBaseScore: number;
-  targetLengthStepScore: number;
-  directSolveBonusScore: number;
-  directSolveBonusShifts: number;
-  efficiencyWordPar: number;
-  efficiencyBonusPerWord: number;
-  phaseCompletionBonus: number;
-  phaseTileReplacementsMin: number;
-  phaseTileReplacementsMax: number;
-  minPlayableWordsPerBoard: number;
-  dailyPhaseCount: number;
+  scoreFourLetter: number;
+  scoreFiveLetter: number;
+  dailyShiftLimit: number;
+  maxCascadesPerShift: number;
 }
 
 export interface RunStats {
+  shiftsMade: number;
   totalWordsFound: number;
+  uniqueWordsCount: number;
+  fiveLetterWords: number;
+  bestCombo: number;
   longestWord: string;
-  targetsSolved: number;
-  directSolves: number;
-  shiftsSpent: number;
-  rescuesUsed: number;
-  phasesCleared: number;
 }
 
 export type GameAction =
-  | { type: 'SUBMIT_WORD'; path: Coord[] }
   | { type: 'SHIFT'; op: ShiftOp }
-  | { type: 'UNDO_SHIFT' }
-  | { type: 'RESCUE_REFRESH' }
-  | { type: 'ADVANCE_PHASE' };
-
-export type EngineEvent =
-  | {
-      type: 'WORD_ACCEPTED';
-      word: string;
-      scoreDelta: number;
-      shiftsEarned: number;
-      newlyPopulatedIndices: number[];
-    }
-  | {
-      type: 'TARGET_SOLVED';
-      word: string;
-      direct: boolean;
-      bonusScore: number;
-      bonusShifts: number;
-    }
-  | { type: 'SHIFT_APPLIED'; op: ShiftOp }
-  | { type: 'SHIFT_UNDONE'; op: ShiftOp }
-  | { type: 'RESCUE_APPLIED'; penalty: number; replacedCount: number }
-  | { type: 'PHASE_ADVANCED'; newPhase: number; phaseBonus: number; dailyComplete: boolean };
+  | { type: 'UNDO_SHIFT' };
 
 export interface GameState {
   schemaVersion: number;
@@ -97,25 +67,20 @@ export interface GameState {
   seed: string;
   dictionaryVersion: string;
   mode: GameMode;
-  difficulty: DifficultyPreset;
-  phase: number;
+  minMatchLength: MinMatchLength;
   board: string[][];
   score: number;
-  shiftTokens: number;
-  wordsTowardsNextShift: number;
-  foundWords: string[];
-  probeHistory: WordProbeRecord[];
-  target: TargetState;
-  uncommittedShifts: ShiftOp[];
-  rescueCount: number;
+  shiftsMade: number;
+  tileDrawCursor: number; // deterministic counter for seeded replacement tiles
+  savedWords: SavedWordRecord[];
+  lastShiftUndoable: ShiftOp | null;
   dailyComplete: boolean;
   stats: RunStats;
-  actionLog: GameAction[];
   updatedAt: string;
 }
 
 export interface DispatchResult {
   state: GameState;
-  events: EngineEvent[];
+  cascades: CascadeStep[];
   error?: string;
 }

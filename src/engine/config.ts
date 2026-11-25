@@ -1,58 +1,17 @@
-import type { DifficultyPreset, EconomyConfig } from './types';
+import type { EconomyConfig } from './types';
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 export const BOARD_SIZE = 5;
 
 export const DEFAULT_ECONOMY: EconomyConfig = {
-  minWordLength: 3,
-  startingShiftTokens: 3,
-  maxShiftTokens: 8,
-  wordsPerShiftToken: 2,
-  longWordBonusLength: 6,
-  rescuePenalty: 50,
-  targetBaseScore: 100,
-  targetLengthStepScore: 25,
-  directSolveBonusScore: 75,
-  directSolveBonusShifts: 1,
-  efficiencyWordPar: 8,
-  efficiencyBonusPerWord: 15,
-  phaseCompletionBonus: 100,
-  phaseTileReplacementsMin: 3,
-  phaseTileReplacementsMax: 5,
-  minPlayableWordsPerBoard: 25,
-  dailyPhaseCount: 5,
-};
-
-export interface DifficultySettings {
-  startingShiftBonus: number;
-  targetLengthForPhase: (phase: number) => number;
-}
-
-export const DIFFICULTY_SETTINGS: Record<DifficultyPreset, DifficultySettings> = {
-  relaxed: {
-    startingShiftBonus: 1,
-    targetLengthForPhase: (phase) => (phase <= 3 ? 4 : 5),
-  },
-  standard: {
-    startingShiftBonus: 0,
-    targetLengthForPhase: (phase) => {
-      if (phase <= 2) return 4;
-      if (phase <= 5) return 5;
-      return 6;
-    },
-  },
-  expert: {
-    startingShiftBonus: 0,
-    targetLengthForPhase: (phase) => {
-      if (phase <= 2) return 5;
-      if (phase <= 5) return 6;
-      return 7;
-    },
-  },
+  scoreFourLetter: 20,
+  scoreFiveLetter: 50,
+  dailyShiftLimit: 25,
+  maxCascadesPerShift: 6,
 };
 
 /**
- * Balanced UK English letter weights tuned for 5x5 word-grid density.
+ * Balanced UK English letter weights tuned for 5x5 horizontal/vertical word-spotting.
  */
 export const LETTER_WEIGHTS: ReadonlyArray<readonly [string, number]> = [
   ['E', 12],

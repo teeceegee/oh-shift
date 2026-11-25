@@ -1,17 +1,16 @@
-import type { WordProbeRecord } from '../../engine';
+import type { SavedWordRecord } from '../../engine';
 import { BottomSheet } from './BottomSheet';
-import { ProbeHistory } from './ProbeHistory';
+import { SavedWordsList } from './SavedWordsList';
 
 interface HistorySheetProps {
-  phase: number;
-  probes: readonly WordProbeRecord[];
+  words: readonly SavedWordRecord[];
   onClose: () => void;
 }
 
-export function HistorySheet({ phase, probes, onClose }: HistorySheetProps) {
+export function HistorySheet({ words, onClose }: HistorySheetProps) {
   return (
-    <BottomSheet title={`Phase ${phase} Words (${probes.length})`} onClose={onClose}>
-      <ProbeHistory probes={probes} maxVisible={200} />
+    <BottomSheet title={`Saved Words (${words.length})`} onClose={onClose}>
+      <SavedWordsList words={words} maxVisible={250} />
     </BottomSheet>
   );
 }

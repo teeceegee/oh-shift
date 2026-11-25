@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { DEFAULT_ECONOMY } from '../../engine';
-import type { DifficultyPreset, GameMode, GameState } from '../../engine';
+import type { GameMode, GameState, MinMatchLength } from '../../engine';
 import { decodeSaveCode, encodeSaveCode } from '../../storage/db';
 import { BottomSheet } from './BottomSheet';
 
@@ -8,9 +8,8 @@ interface MenuSheetProps {
   state: GameState;
   todayKey: string;
   onSwitchMode: (mode: 'solo' | 'daily') => void;
-  onStartNewEndless: (difficulty: DifficultyPreset, customSeed?: string) => void;
+  onStartNewEndless: (minMatchLength: MinMatchLength, customSeed?: string) => void;
   onImportState: (imported: GameState) => void;
-  onRescueRefresh: () => void;
   onClose: () => void;
 }
 
@@ -20,10 +19,9 @@ export function MenuSheet({
   onSwitchMode,
   onStartNewEndless,
   onImportState,
-  onRescueRefresh,
   onClose,
 }: MenuSheetProps) {
-  const [difficulty, setDifficulty] = useState<DifficultyPreset>(state.difficulty);
+  const [minLen, setMinLen] = useState<MinMatchLength>(state.minMatchLength);
   const [customSeed, setCustomSeed] = useState('');
   const [importText, setImportText] = useState('');
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
@@ -35,7 +33,7 @@ export function MenuSheet({
       await navigator.clipboard.writeText(code);
       setCopyStatus('Save Code copied to clipboard!');
     } catch {
-      setCopyStatus('Copy failed — select from the box below.');
+      setCopyStatus('Copy failed — try again.');
     }
   };
 
@@ -50,12 +48,12 @@ export function MenuSheet({
     onClose();
   };
 
-  const modeLabel = (m: GameMode) => (m === 'daily' ? 'Daily 5-Phase' : 'Endless Run');
+  const modeLabel = (m: GameMode) =>
+    m === 'daily' ? `Daily (${DEFAULT_ECONOMY.dailyShiftLimit} Shifts)` : 'Endless';
 
   return (
     <BottomSheet title="Game Menu & Backup" onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '0.9rem' }}>
-        {/* Mode Switcher */}
         <section style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
           <div className="section-heading">
             <span>Switch Mode</span>
@@ -70,7 +68,7 @@ export function MenuSheet({
                 onClose();
               }}
             >
-              Endless Run
+              Endless (Unlimited)
             </button>
             <button
               type="button"
@@ -85,7 +83,6 @@ export function MenuSheet({
           </div>
         </section>
 
-        {/* New Endless Run */}
         <section
           style={{
             display: 'flex',
@@ -96,21 +93,24 @@ export function MenuSheet({
           }}
         >
           <div className="section-heading">
-            <span>Start New Endless Run</span>
+            <span>Start New Endless Board</span>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
-            {(['relaxed', 'standard', 'expert'] as const).map((preset) => (
-              <button
-                key={preset}
-                type="button"
-                className={difficulty === preset ? 'btn-primary' : 'btn-secondary'}
-                onClick={() => setDifficulty(preset)}
-                style={{ textTransform: 'capitalize' }}
-              >
-                {preset}
-              </button>
-            ))}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+            <button
+              type="button"
+              className={minLen === 4 ? 'btn-primary' : 'btn-secondary'}
+              onClick={() => setMinLen(4)}
+            >
+              4 &amp; 5 Letters (Pacy)
+            </button>
+            <button
+              type="button"
+              className={minLen === 5 ? 'btn-primary' : 'btn-secondary'}
+              onClick={() => setMinLen(5)}
+            >
+              5 Letters Only (Hard)
+            </button>
           </div>
 
           <input
@@ -134,41 +134,14 @@ export function MenuSheet({
             type="button"
             className="btn-primary"
             onClick={() => {
-              onStartNewEndless(difficulty, customSeed.trim() || undefined);
+              onStartNewEndless(minLen, customSeed.trim() || undefined);
               onClose();
             }}
           >
-            Start New Endless Run
+            Start New Board
           </button>
         </section>
 
-        {/* Manual Rescue Refresh */}
-        <section
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '8px',
-            borderTop: '1px solid var(--border-subtle)',
-            paddingTop: '12px',
-          }}
-        >
-          <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-            Stuck on a tough board? Refresh 3–5 tiles &amp; gain +1 Shift.
-          </div>
-          <button
-            type="button"
-            className="btn-warm"
-            onClick={() => {
-              onRescueRefresh();
-              onClose();
-            }}
-          >
-            Rescue (−{DEFAULT_ECONOMY.rescuePenalty})
-          </button>
-        </section>
-
-        {/* Portable Save Code Backup (iOS ITP safety / cross-device) */}
         <section
           style={{
             display: 'flex',
@@ -179,11 +152,11 @@ export function MenuSheet({
           }}
         >
           <div className="section-heading">
-            <span>Travel Save Backup (Export / Import)</span>
+            <span>Travel Save Backup</span>
           </div>
           <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-            Auto-saves to IndexedDB after every move. Copy a Save Code to transfer a run between
-            iPhone and iPad or back up before long trips.
+            Auto-saves to IndexedDB after every shift. Export an <code>OS3:</code> Save Code to
+            transfer between iPhone and iPad.
           </div>
 
           <button type="button" className="btn-secondary" onClick={handleCopySaveCode}>
@@ -200,7 +173,7 @@ export function MenuSheet({
               type="text"
               value={importText}
               onChange={(e) => setImportText(e.target.value)}
-              placeholder="Paste OS2:... Save Code"
+              placeholder="Paste OS3:... Save Code"
               aria-label="Paste Save Code to import"
               style={{
                 flex: 1,

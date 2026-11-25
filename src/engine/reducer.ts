@@ -1,51 +1,43 @@
-import { applyShift, invertShift, validatePath } from './board';
-import { DEFAULT_ECONOMY, DIFFICULTY_SETTINGS, SCHEMA_VERSION } from './config';
-import { buildRescueBoard } from './deadlock';
-import { evaluateWordAgainstTarget } from './deduction';
+import { applyShift, cloneBoard, collectUniqueCoords, findLineMatches, invertShift } from './board';
+import { DEFAULT_ECONOMY, SCHEMA_VERSION } from './config';
 import type { CompactDictionary } from './dictionary';
-import { evolveBoardForNextPhase, generateInitialBoard, generatePhaseTarget } from './generator';
+import { drawReplacementLetter, generateCalmStartingBoard } from './generator';
 import type {
-  DifficultyPreset,
+  CascadeStep,
   DispatchResult,
   EconomyConfig,
-  EngineEvent,
   GameAction,
   GameMode,
   GameState,
+  MinMatchLength,
   RunStats,
-  WordProbeRecord,
+  SavedWordRecord,
 } from './types';
 
 export interface CreateGameOptions {
   seed: string;
   mode?: GameMode;
-  difficulty?: DifficultyPreset;
+  minMatchLength?: MinMatchLength;
   dict: CompactDictionary;
-  config?: EconomyConfig;
   gameId?: string;
   nowIso?: string;
 }
 
 function createInitialStats(): RunStats {
   return {
+    shiftsMade: 0,
     totalWordsFound: 0,
+    uniqueWordsCount: 0,
+    fiveLetterWords: 0,
+    bestCombo: 0,
     longestWord: '',
-    targetsSolved: 0,
-    directSolves: 0,
-    shiftsSpent: 0,
-    rescuesUsed: 0,
-    phasesCleared: 0,
   };
 }
 
 export function createNewGame(options: CreateGameOptions): GameState {
-  const config = options.config ?? DEFAULT_ECONOMY;
   const mode = options.mode ?? 'solo';
-  const difficulty = options.difficulty ?? 'standard';
-  const diffSettings = DIFFICULTY_SETTINGS[difficulty];
-
-  const board = generateInitialBoard(options.seed, options.dict, config);
-  const target = generatePhaseTarget(board, options.seed, 1, options.dict, difficulty);
+  const minMatchLength = options.minMatchLength ?? 4;
+  const board = generateCalmStartingBoard(options.seed, options.dict, minMatchLength);
 
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -53,29 +45,17 @@ export function createNewGame(options: CreateGameOptions): GameState {
     seed: options.seed,
     dictionaryVersion: options.dict.version,
     mode,
-    difficulty,
-    phase: 1,
+    minMatchLength,
     board,
     score: 0,
-    shiftTokens: Math.min(
-      config.maxShiftTokens,
-      config.startingShiftTokens + diffSettings.startingShiftBonus,
-    ),
-    wordsTowardsNextShift: 0,
-    foundWords: [],
-    probeHistory: [],
-    target,
-    uncommittedShifts: [],
-    rescueCount: 0,
+    shiftsMade: 0,
+    tileDrawCursor: 0,
+    savedWords: [],
+    lastShiftUndoable: null,
     dailyComplete: false,
     stats: createInitialStats(),
-    actionLog: [],
     updatedAt: options.nowIso ?? new Date().toISOString(),
   };
-}
-
-export function isPhaseReadyToAdvance(state: GameState): boolean {
-  return state.target.solved;
 }
 
 export function dispatchAction(
@@ -86,300 +66,120 @@ export function dispatchAction(
   nowIso?: string,
 ): DispatchResult {
   const timestamp = nowIso ?? new Date().toISOString();
-  const events: EngineEvent[] = [];
 
   if (state.dailyComplete) {
-    return { state, events, error: 'Daily challenge is already complete' };
+    return { state, cascades: [], error: 'Daily 25-shift challenge is already complete' };
   }
 
   switch (action.type) {
-    case 'SUBMIT_WORD': {
-      const pathCheck = validatePath(state.board, action.path);
-      if (!pathCheck.valid) {
-        return { state, events, error: pathCheck.reason };
-      }
-      const word = pathCheck.word;
-      if (word.length < config.minWordLength) {
-        return {
-          state,
-          events,
-          error: `Words must be at least ${config.minWordLength} letters long`,
-        };
-      }
-      if (!dict.hasWord(word)) {
-        return { state, events, error: `"${word}" is not in the UK English dictionary` };
-      }
-      if (state.foundWords.includes(word)) {
-        return { state, events, error: `"${word}" has already been found in this phase` };
-      }
-
-      const wordScore = word.length * word.length;
-      const isLong = word.length >= config.longWordBonusLength;
-
-      let wordsTowards = state.wordsTowardsNextShift + 1;
-      let shiftsEarned = 0;
-      if (wordsTowards >= config.wordsPerShiftToken) {
-        wordsTowards -= config.wordsPerShiftToken;
-        shiftsEarned += 1;
-      }
-      if (isLong) {
-        shiftsEarned += 1;
-      }
-
-      // Evaluate this board word position-by-position against the hidden target word
-      const feedback = evaluateWordAgainstTarget(word, state.target.answer);
-      const nextRevealed = state.target.revealedPositions.slice();
-      const newlyPopulatedIndices: number[] = [];
-
-      if (!state.target.solved) {
-        const overlap = Math.min(word.length, state.target.length);
-        for (let i = 0; i < overlap; i++) {
-          if (word[i] === state.target.answer[i] && !nextRevealed[i]) {
-            nextRevealed[i] = true;
-            newlyPopulatedIndices.push(i);
-          }
-        }
-      }
-
-      const probeRecord: WordProbeRecord = {
-        word,
-        score: wordScore,
-        feedback,
-        newlyPopulatedIndices,
-      };
-
-      let nextScore = state.score + wordScore;
-      let nextShifts = Math.min(config.maxShiftTokens, state.shiftTokens + shiftsEarned);
-      const nextStats: RunStats = {
-        ...state.stats,
-        totalWordsFound: state.stats.totalWordsFound + 1,
-        longestWord: word.length > state.stats.longestWord.length ? word : state.stats.longestWord,
-      };
-
-      events.push({
-        type: 'WORD_ACCEPTED',
-        word,
-        scoreDelta: wordScore,
-        shiftsEarned,
-        newlyPopulatedIndices,
-      });
-
-      const wasSolved = state.target.solved;
-      const nowAllPopulated = nextRevealed.every(Boolean);
-      const isDirectExactMatch = !wasSolved && word === state.target.answer;
-
-      let nextTarget = {
-        ...state.target,
-        revealedPositions: nextRevealed,
-      };
-
-      if (!wasSolved && (nowAllPopulated || isDirectExactMatch)) {
-        const targetBase =
-          config.targetBaseScore + config.targetLengthStepScore * (state.target.length - 3);
-        const wordsUsedThisPhase = state.foundWords.length + 1;
-        const efficiencyBonus =
-          Math.max(0, config.efficiencyWordPar - wordsUsedThisPhase) *
-          config.efficiencyBonusPerWord;
-        const directScore = isDirectExactMatch ? config.directSolveBonusScore : 0;
-        const bonusShifts = isDirectExactMatch ? config.directSolveBonusShifts : 0;
-        const totalBonus = targetBase + efficiencyBonus + directScore;
-
-        nextScore += totalBonus;
-        nextShifts = Math.min(config.maxShiftTokens, nextShifts + bonusShifts);
-        nextStats.targetsSolved += 1;
-        if (isDirectExactMatch) nextStats.directSolves += 1;
-
-        nextTarget = {
-          ...nextTarget,
-          revealedPositions: new Array(state.target.length).fill(true),
-          solved: true,
-          solvedDirectly: isDirectExactMatch,
-        };
-
-        events.push({
-          type: 'TARGET_SOLVED',
-          word: state.target.answer,
-          direct: isDirectExactMatch,
-          bonusScore: totalBonus,
-          bonusShifts,
-        });
-      }
-
-      return {
-        state: {
-          ...state,
-          score: nextScore,
-          shiftTokens: nextShifts,
-          wordsTowardsNextShift: wordsTowards,
-          foundWords: [...state.foundWords, word],
-          probeHistory: [probeRecord, ...state.probeHistory],
-          target: nextTarget,
-          uncommittedShifts: [], // Commit boundary: word submission locks prior shifts
-          stats: nextStats,
-          actionLog: [...state.actionLog, action],
-          updatedAt: timestamp,
-        },
-        events,
-      };
-    }
-
     case 'SHIFT': {
-      if (state.shiftTokens < 1) {
-        return { state, events, error: 'Not enough shift tokens' };
-      }
-      const nextBoard = applyShift(state.board, action.op);
-      events.push({ type: 'SHIFT_APPLIED', op: action.op });
+      let currentBoard = applyShift(state.board, action.op);
+      const nextShiftNumber = state.shiftsMade + 1;
+      let cursor = state.tileDrawCursor;
+      let scoreGain = 0;
+      const newSavedWords: SavedWordRecord[] = [];
+      const cascades: CascadeStep[] = [];
 
-      return {
-        state: {
-          ...state,
-          board: nextBoard,
-          shiftTokens: state.shiftTokens - 1,
-          uncommittedShifts: [...state.uncommittedShifts, action.op],
-          stats: { ...state.stats, shiftsSpent: state.stats.shiftsSpent + 1 },
-          actionLog: [...state.actionLog, action],
-          updatedAt: timestamp,
+      // Automatically spot horizontal & vertical words, flash, save, and replace (with cascades!)
+      for (let step = 1; step <= config.maxCascadesPerShift; step++) {
+        const matches = findLineMatches(currentBoard, dict, state.minMatchLength, config);
+        if (matches.length === 0) break;
+
+        const matchedCoords = collectUniqueCoords(matches);
+        const boardBeforeReplace = cloneBoard(currentBoard);
+        const boardAfterReplace = cloneBoard(currentBoard);
+
+        // Replace every matched tile with a fresh seeded letter
+        for (const coord of matchedCoords) {
+          cursor += 1;
+          const prev = boardBeforeReplace[coord.row][coord.col];
+          boardAfterReplace[coord.row][coord.col] = drawReplacementLetter(state.seed, cursor, prev);
+        }
+
+        // Score with cascade combo multiplier (1x, 2x, 3x...)
+        let stepScore = 0;
+        for (let i = 0; i < matches.length; i++) {
+          const m = matches[i];
+          const wordScore = m.score * step;
+          stepScore += wordScore;
+          newSavedWords.push({
+            id: `s${nextShiftNumber}-c${step}-${i}-${m.word}`,
+            word: m.word,
+            axis: m.axis,
+            score: wordScore,
+            combo: step,
+            shiftNumber: nextShiftNumber,
+          });
+        }
+
+        scoreGain += stepScore;
+        cascades.push({
+          stepNumber: step,
+          matches,
+          matchedCoords,
+          boardBeforeReplace,
+          boardAfterReplace,
+          stepScore,
+        });
+
+        currentBoard = boardAfterReplace;
+      }
+
+      const allSaved = [...newSavedWords.reverse(), ...state.savedWords];
+      const uniqueSet = new Set(allSaved.map((w) => w.word));
+      let longest = state.stats.longestWord;
+      let fiveCount = state.stats.fiveLetterWords;
+      for (const w of newSavedWords) {
+        if (w.word.length > longest.length) longest = w.word;
+        if (w.word.length === 5) fiveCount += 1;
+      }
+
+      const maxComboThisShift = cascades.length;
+      const dailyComplete =
+        state.mode === 'daily' && nextShiftNumber >= config.dailyShiftLimit;
+
+      const nextState: GameState = {
+        ...state,
+        board: currentBoard,
+        score: state.score + scoreGain,
+        shiftsMade: nextShiftNumber,
+        tileDrawCursor: cursor,
+        savedWords: allSaved,
+        // Allow 1-tap Undo if this shift did not trigger any word replacement
+        lastShiftUndoable: cascades.length === 0 ? action.op : null,
+        dailyComplete,
+        stats: {
+          shiftsMade: nextShiftNumber,
+          totalWordsFound: allSaved.length,
+          uniqueWordsCount: uniqueSet.size,
+          fiveLetterWords: fiveCount,
+          bestCombo: Math.max(state.stats.bestCombo, maxComboThisShift),
+          longestWord: longest,
         },
-        events,
+        updatedAt: timestamp,
       };
+
+      return { state: nextState, cascades };
     }
 
     case 'UNDO_SHIFT': {
-      if (state.uncommittedShifts.length === 0) {
-        return { state, events, error: 'No uncommitted shift to undo' };
+      if (!state.lastShiftUndoable) {
+        return { state, cascades: [], error: 'Nothing to undo' };
       }
-      const lastOp = state.uncommittedShifts[state.uncommittedShifts.length - 1];
-      const nextBoard = applyShift(state.board, invertShift(lastOp));
-      events.push({ type: 'SHIFT_UNDONE', op: lastOp });
+      const revertedBoard = applyShift(state.board, invertShift(state.lastShiftUndoable));
+      const nextShifts = Math.max(0, state.shiftsMade - 1);
 
       return {
         state: {
           ...state,
-          board: nextBoard,
-          shiftTokens: Math.min(config.maxShiftTokens, state.shiftTokens + 1),
-          uncommittedShifts: state.uncommittedShifts.slice(0, -1),
-          stats: {
-            ...state.stats,
-            shiftsSpent: Math.max(0, state.stats.shiftsSpent - 1),
-          },
-          actionLog: [...state.actionLog, action],
+          board: revertedBoard,
+          shiftsMade: nextShifts,
+          lastShiftUndoable: null,
+          stats: { ...state.stats, shiftsMade: nextShifts },
           updatedAt: timestamp,
         },
-        events,
-      };
-    }
-
-    case 'RESCUE_REFRESH': {
-      const { board: rescuedBoard, replacedCount } = buildRescueBoard(state, dict, config);
-      const nextScore = Math.max(0, state.score - config.rescuePenalty);
-      const nextShifts = Math.min(config.maxShiftTokens, Math.max(1, state.shiftTokens + 1));
-
-      events.push({
-        type: 'RESCUE_APPLIED',
-        penalty: config.rescuePenalty,
-        replacedCount,
-      });
-
-      return {
-        state: {
-          ...state,
-          board: rescuedBoard,
-          score: nextScore,
-          shiftTokens: nextShifts,
-          uncommittedShifts: [],
-          rescueCount: state.rescueCount + 1,
-          stats: { ...state.stats, rescuesUsed: state.stats.rescuesUsed + 1 },
-          actionLog: [...state.actionLog, action],
-          updatedAt: timestamp,
-        },
-        events,
-      };
-    }
-
-    case 'ADVANCE_PHASE': {
-      if (!isPhaseReadyToAdvance(state)) {
-        return { state, events, error: 'Populate all target letters before advancing the phase' };
-      }
-
-      const phaseBonus = config.phaseCompletionBonus;
-      const nextScore = state.score + phaseBonus;
-      const phasesCleared = state.stats.phasesCleared + 1;
-
-      if (state.mode === 'daily' && state.phase >= config.dailyPhaseCount) {
-        events.push({
-          type: 'PHASE_ADVANCED',
-          newPhase: state.phase,
-          phaseBonus,
-          dailyComplete: true,
-        });
-
-        return {
-          state: {
-            ...state,
-            score: nextScore,
-            dailyComplete: true,
-            uncommittedShifts: [],
-            stats: { ...state.stats, phasesCleared },
-            actionLog: [...state.actionLog, action],
-            updatedAt: timestamp,
-          },
-          events,
-        };
-      }
-
-      const nextPhase = state.phase + 1;
-      const { board: nextBoard } = evolveBoardForNextPhase(
-        state.board,
-        state.seed,
-        nextPhase,
-        dict,
-        config,
-      );
-      const nextTarget = generatePhaseTarget(
-        nextBoard,
-        state.seed,
-        nextPhase,
-        dict,
-        state.difficulty,
-      );
-
-      events.push({
-        type: 'PHASE_ADVANCED',
-        newPhase: nextPhase,
-        phaseBonus,
-        dailyComplete: false,
-      });
-
-      return {
-        state: {
-          ...state,
-          phase: nextPhase,
-          board: nextBoard,
-          score: nextScore,
-          foundWords: [],
-          probeHistory: [],
-          target: nextTarget,
-          uncommittedShifts: [],
-          stats: { ...state.stats, phasesCleared },
-          actionLog: [...state.actionLog, action],
-          updatedAt: timestamp,
-        },
-        events,
+        cascades: [],
       };
     }
   }
-}
-
-export function replayGame(
-  options: CreateGameOptions,
-  actions: readonly GameAction[],
-): GameState {
-  let state = createNewGame(options);
-  for (const action of actions) {
-    const res = dispatchAction(state, action, options.dict, options.config, options.nowIso);
-    if (!res.error) {
-      state = res.state;
-    }
-  }
-  return state;
 }
