@@ -85,6 +85,18 @@ describe('Oh! Shift v3 — Unlimited Shifts & Auto-Spot H/V Matching', () => {
 
     const matches5 = findLineMatches(board, dict, 5);
     expect(matches5).toHaveLength(0);
+
+    // Regression: common everyday words from SCOWL tier 35/40 like RIPE must be spotted
+    const ripeBoard = [
+      ['C', 'K', 'P', 'L', 'I'],
+      ['R', 'I', 'P', 'E', 'Y'],
+      ['U', 'D', 'T', 'G', 'P'],
+      ['I', 'M', 'B', 'O', 'B'],
+      ['A', 'A', 'M', 'M', 'P'],
+    ];
+    expect(
+      findLineMatches(ripeBoard, dict, 4).some((m) => m.word === 'RIPE' && m.axis === 'horizontal'),
+    ).toBe(true);
   });
 
   it('Allows unlimited shifts in Endless mode and 1-tap Undo on non-matching shifts', () => {

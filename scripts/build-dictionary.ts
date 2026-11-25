@@ -28,12 +28,16 @@ const BOARD_TIERS = [
   'english/british/60',
 ];
 
-// Tiers 10 + 20 are high-frequency everyday UK English words — fair and recognisable as hidden targets
+// Tiers 10 + 20 + 35 + 40 are standard everyday UK English words — comprehensive without obscure jargon
 const TARGET_TIERS = [
   'english/10',
   'english/20',
+  'english/35',
+  'english/40',
   'english/british/10',
   'english/british/20',
+  'english/british/35',
+  'english/british/40',
 ];
 
 function collectWords(tiers: string[], minLen: number, maxLen: number): string[] {
