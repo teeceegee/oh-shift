@@ -13,7 +13,7 @@ export function getLocalDateKey(date: Date = new Date()): string {
 export function createDailyGame(
   dateKey: string,
   dict: CompactDictionary,
-  minMatchLength: MinMatchLength = 4,
+  minMatchLength: MinMatchLength = 3,
 ): GameState {
   return createNewGame({
     seed: `daily-${dateKey}`,
@@ -29,6 +29,6 @@ export function formatDailyShareSummary(state: GameState): string {
   return [
     `Oh! Shift Daily · ${dateLabel}`,
     `Score: ${state.score} in ${state.shiftsMade}/${DEFAULT_ECONOMY.dailyShiftLimit} shifts`,
-    `Words: ${state.stats.totalWordsFound} (${state.stats.fiveLetterWords} five-letter · Best Combo: ${state.stats.bestCombo}×)`,
+    `Words: ${state.stats.totalWordsFound} (${state.stats.fiveLetterWords} five-letter · Crosses: ${state.stats.crossWordsFound})`,
   ].join('\n');
 }

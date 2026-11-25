@@ -10,34 +10,36 @@ export function RulesSheet({ onClose }: RulesSheetProps) {
     <BottomSheet title="How to Play Oh! Shift" onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.9rem', lineHeight: 1.5 }}>
         <p style={{ margin: 0 }}>
-          <strong>Simple, pacy slide-and-match wordplay:</strong> shift rows and columns to line up
-          UK English words horizontally (left → right) or vertically (top → bottom).
+          <strong>Deliberate, pacy 5×5 word-shifting:</strong> slide rows and columns to line up
+          UK English words horizontally (left → right) or vertically (top → bottom), then{' '}
+          <strong>tap the first letter</strong> to claim the word.
         </p>
 
         <div>
           <strong>1. Unlimited Shifts</strong>
           <ul style={{ margin: '4px 0 0', paddingLeft: '18px' }}>
-            <li>Tap any edge arrow (<strong>◀ ▶ ▲ ▼</strong>) to slide that row or column with wraparound.</li>
-            <li>No shift limits in Endless mode — experiment freely!</li>
-            <li>Tap <strong>↶ Undo</strong> if your last shift didn’t match a word and you want to step back.</li>
+            <li>Tap any red edge arrow (<strong>◀ ▶ ▲ ▼</strong>) to slide that row or column with wraparound.</li>
+            <li>Nothing fires accidentally while you shift — take as many shifts as you need to line up the exact word you want!</li>
+            <li>Tap <strong>↶ Undo</strong> to step back your last shift.</li>
           </ul>
         </div>
 
         <div>
-          <strong>2. Automatic Word Spotting &amp; Cascades</strong>
+          <strong>2. One-Tap Word Claiming</strong>
           <ul style={{ margin: '4px 0 0', paddingLeft: '18px' }}>
             <li>
-              Whenever a <strong>4-letter (+{DEFAULT_ECONOMY.scoreFourLetter} pts)</strong> or{' '}
-              <strong>5-letter (+{DEFAULT_ECONOMY.scoreFiveLetter} pts)</strong> common UK English
-              word forms horizontally or vertically, the tiles automatically flash green, the word
-              is saved, and fresh letters pop into their place.
+              Tap the <strong>first letter</strong> of any horizontal (→) or vertical (↓) word. The
+              longest valid word starting on that tile flashes green, saves to your collection, and
+              is replaced by fresh letters.
             </li>
             <li>
-              If the fresh letters immediately form another word, you score a{' '}
-              <strong>Chain Combo (2×, 3×…)</strong>!
+              <strong>Scoring:</strong> 3-letter (+{DEFAULT_ECONOMY.scoreThreeLetter}), 4-letter (+
+              {DEFAULT_ECONOMY.scoreFourLetter}), 5-letter (+{DEFAULT_ECONOMY.scoreFiveLetter}).
             </li>
             <li>
-              Want a tougher puzzle? Switch to <strong>5 Letters Only</strong> in the Menu.
+              <strong>Cross-Word Bonus (+{DEFAULT_ECONOMY.crossWordBonus} pts):</strong> If a single
+              starting letter begins <em>both</em> a horizontal and a vertical word, tapping it
+              claims both at once!
             </li>
           </ul>
         </div>
@@ -45,7 +47,7 @@ export function RulesSheet({ onClose }: RulesSheetProps) {
         <div>
           <strong>3. Daily 25-Shift Challenge</strong>
           <ul style={{ margin: '4px 0 0', paddingLeft: '18px' }}>
-            <li>Everyone starts with the same daily board and letter stream — see how high you can score in {DEFAULT_ECONOMY.dailyShiftLimit} shifts!</li>
+            <li>Everyone starts with the same daily board — see how high you can score in {DEFAULT_ECONOMY.dailyShiftLimit} shifts!</li>
           </ul>
         </div>
       </div>

@@ -12,13 +12,13 @@ export function SavedWordsList({ words, maxVisible = 16 }: SavedWordsListProps) 
     <section className="saved-words-section" aria-label="Saved words">
       <div className="section-heading">
         <span>Saved Words ({words.length})</span>
-        <span>H / V auto-spotted</span>
+        <span>Tap first letter to claim</span>
       </div>
 
       {visible.length === 0 ? (
         <p className="probe-empty">
-          Tap any red arrow to slide a row or column. Line up a horizontal or vertical word and it
-          will flash, save here, and replace with fresh letters!
+          Slide rows or columns with the edge arrows, then tap the <strong>first letter</strong> of
+          any horizontal (→) or vertical (↓) word to claim it!
         </p>
       ) : (
         <div className="saved-words-grid">
@@ -32,7 +32,7 @@ export function SavedWordsList({ words, maxVisible = 16 }: SavedWordsListProps) 
               <span className="saved-word-text">{item.word}</span>
               <span className="saved-word-meta">
                 +{item.score}
-                {item.combo > 1 ? ` · ${item.combo}×` : ''}
+                {item.crossBonus ? ' ★' : ''}
               </span>
             </div>
           ))}

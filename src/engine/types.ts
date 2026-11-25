@@ -1,6 +1,6 @@
 export type GameMode = 'solo' | 'daily';
 
-export type MinMatchLength = 4 | 5;
+export type MinMatchLength = 3 | 4 | 5;
 
 export type ShiftAxis = 'row' | 'col';
 export type ShiftDirection = 'left' | 'right' | 'up' | 'down';
@@ -23,13 +23,13 @@ export interface WordMatch {
   score: number;
 }
 
-export interface CascadeStep {
-  stepNumber: number; // 1 = initial match, 2+ = cascade combo
+export interface FlashStep {
   matches: WordMatch[];
   matchedCoords: Coord[];
   boardBeforeReplace: string[][];
   boardAfterReplace: string[][];
   stepScore: number;
+  crossBonus: boolean;
 }
 
 export interface SavedWordRecord {
@@ -37,15 +37,16 @@ export interface SavedWordRecord {
   word: string;
   axis: 'horizontal' | 'vertical';
   score: number;
-  combo: number;
+  crossBonus: boolean;
   shiftNumber: number;
 }
 
 export interface EconomyConfig {
+  scoreThreeLetter: number;
   scoreFourLetter: number;
   scoreFiveLetter: number;
+  crossWordBonus: number;
   dailyShiftLimit: number;
-  maxCascadesPerShift: number;
 }
 
 export interface RunStats {
@@ -53,12 +54,13 @@ export interface RunStats {
   totalWordsFound: number;
   uniqueWordsCount: number;
   fiveLetterWords: number;
-  bestCombo: number;
+  crossWordsFound: number;
   longestWord: string;
 }
 
 export type GameAction =
   | { type: 'SHIFT'; op: ShiftOp }
+  | { type: 'CLAIM_AT'; coord: Coord }
   | { type: 'UNDO_SHIFT' };
 
 export interface GameState {
@@ -71,7 +73,7 @@ export interface GameState {
   board: string[][];
   score: number;
   shiftsMade: number;
-  tileDrawCursor: number; // deterministic counter for seeded replacement tiles
+  tileDrawCursor: number;
   savedWords: SavedWordRecord[];
   lastShiftUndoable: ShiftOp | null;
   dailyComplete: boolean;
@@ -81,6 +83,6 @@ export interface GameState {
 
 export interface DispatchResult {
   state: GameState;
-  cascades: CascadeStep[];
+  flash: FlashStep | null;
   error?: string;
 }

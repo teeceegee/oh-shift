@@ -1,8 +1,5 @@
-import { findLineMatches } from './board';
 import { BOARD_SIZE, LETTER_WEIGHTS, VOWELS } from './config';
-import type { CompactDictionary } from './dictionary';
 import { createPrng, type Prng } from './prng';
-import type { MinMatchLength } from './types';
 
 const TOTAL_WEIGHT = LETTER_WEIGHTS.reduce((acc, [, w]) => acc + w, 0);
 
@@ -25,7 +22,11 @@ function countVowels(board: readonly (readonly string[])[]): number {
   return count;
 }
 
-function generateRawBoard(prng: Prng): string[][] {
+/**
+ * Generates a balanced 5x5 starting board with healthy vowel density (8..11 vowels).
+ */
+export function generateStartingBoard(seed: string): string[][] {
+  const prng = createPrng(`${seed}:start-board`);
   const board: string[][] = [];
   for (let r = 0; r < BOARD_SIZE; r++) {
     const row: string[] = [];
@@ -52,37 +53,6 @@ function generateRawBoard(prng: Prng): string[][] {
     if (VOWELS.has(board[r][c])) {
       board[r][c] = prng.pick(consonantList);
       vowels--;
-    }
-  }
-  return board;
-}
-
-/**
- * Generates a calm starting 5x5 board with healthy vowel density
- * and ZERO pre-existing matches so the board doesn't explode before the player's first move.
- */
-export function generateCalmStartingBoard(
-  seed: string,
-  dict: CompactDictionary,
-  minMatchLength: MinMatchLength = 4,
-): string[][] {
-  const prng = createPrng(`${seed}:start-board`);
-
-  for (let attempt = 0; attempt < 40; attempt++) {
-    const candidate = generateRawBoard(prng);
-    if (findLineMatches(candidate, dict, minMatchLength).length === 0) {
-      return candidate;
-    }
-  }
-
-  // Fallback: break any remaining match by replacing one letter in each match
-  const board = generateRawBoard(prng);
-  for (let guard = 0; guard < 10; guard++) {
-    const matches = findLineMatches(board, dict, minMatchLength);
-    if (matches.length === 0) break;
-    for (const m of matches) {
-      const target = m.coords[1];
-      board[target.row][target.col] = pickWeightedLetter(prng);
     }
   }
   return board;

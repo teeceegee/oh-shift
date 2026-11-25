@@ -33,8 +33,8 @@ export function StatsSheet({ state, records, onClose }: StatsSheetProps) {
           </div>
           <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'flex', justifyContent: 'space-between' }}>
             <span>Shifts: <strong>{state.shiftsMade}</strong></span>
-            <span>Unique words: <strong>{state.stats.uniqueWordsCount}</strong></span>
-            <span>Best combo: <strong>{state.stats.bestCombo}×</strong></span>
+            <span>Unique: <strong>{state.stats.uniqueWordsCount}</strong></span>
+            <span>Crosses: <strong>{state.stats.crossWordsFound}</strong></span>
           </div>
         </section>
 
@@ -60,8 +60,8 @@ export function StatsSheet({ state, records, onClose }: StatsSheetProps) {
               <span className="hud-value">{records.bestDailyScore}</span>
             </div>
             <div className="hud-card">
-              <span className="hud-label">Best Combo</span>
-              <span className="hud-value">{records.bestComboEver}×</span>
+              <span className="hud-label">Crosses ★</span>
+              <span className="hud-value">{records.totalCrossWordsEver}</span>
             </div>
           </div>
         </section>

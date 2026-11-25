@@ -1,7 +1,7 @@
 # Echopost Master Jira Tickets Registry
 
 * **Instance**: `https://echopost.atlassian.net`
-* **Last Synchronized**: `2026-11-25 17:28:12`
+* **Last Synchronized**: `2026-11-25 18:01:59`
 * **Sync Command**: `jira sync-map` (automatically updated on `create-issue`, `update-issue`, and `transition-issue`)
 
 ---
@@ -29,7 +29,7 @@
 | [BSP-17](https://echopost.atlassian.net/browse/BSP-17) | Task | **To Do** | Medium | BSP-2 | Conduct Governor Mock Inspection Q&A Walk-Through & Scenario Practice |
 | [BSP-19](https://echopost.atlassian.net/browse/BSP-19) | Task | **Done** | High | BSP-3 | Deploy DfE Explore Education Statistics API Skill (dfe-ees), AI Provenance Attribution & 2025/26 Live Data Discovery Dossier |
 
-## Project: `EVD` — Everyday (340 Tickets)
+## Project: `EVD` — Everyday (341 Tickets)
 
 | Key | Type | Status | Priority | Parent | Summary |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -373,3 +373,4 @@
 | [EVD-341](https://echopost.atlassian.net/browse/EVD-341) | Task | **Done** | High | EVD-334 | Oh! Shift v2 Core Pivot: Unified Single-Target Positional Population Gameplay |
 | [EVD-342](https://echopost.atlassian.net/browse/EVD-342) | Task | **Done** | Medium | - | FireTV: Create fire-tv-stick Antigravity Skill & ADB CLI Helper (firetv) |
 | [EVD-343](https://echopost.atlassian.net/browse/EVD-343) | Task | **Done** | High | EVD-334 | Oh! Shift v3 Pivot: Unlimited Shifts & Automatic Horizontal/Vertical Word Matching |
+| [EVD-344](https://echopost.atlassian.net/browse/EVD-344) | Task | **Done** | High | EVD-334 | Oh! Shift v4: Deliberate 1-Tap First-Letter Word Claiming & Cross-Word Bonus |

@@ -1,17 +1,18 @@
 import type { EconomyConfig } from './types';
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 export const BOARD_SIZE = 5;
 
 export const DEFAULT_ECONOMY: EconomyConfig = {
-  scoreFourLetter: 20,
+  scoreThreeLetter: 10,
+  scoreFourLetter: 25,
   scoreFiveLetter: 50,
+  crossWordBonus: 25,
   dailyShiftLimit: 25,
-  maxCascadesPerShift: 6,
 };
 
 /**
- * Balanced UK English letter weights tuned for 5x5 horizontal/vertical word-spotting.
+ * Balanced UK English letter weights tuned for 5x5 horizontal/vertical word building.
  */
 export const LETTER_WEIGHTS: ReadonlyArray<readonly [string, number]> = [
   ['E', 12],

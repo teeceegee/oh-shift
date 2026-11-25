@@ -12,9 +12,9 @@ import { decodeSaveCode, encodeSaveCode, getSaveSlotKey } from '../../src/storag
 
 const dict = getBundledDictionary();
 
-describe('Oh! Shift v3 — Persistence, Save Codes & Daily Challenge', () => {
-  it('Encodes and decodes portable OS3 Save Codes losslessly', () => {
-    let state = createNewGame({ seed: 'travel-v3', dict, minMatchLength: 4 });
+describe('Oh! Shift v4 — Persistence, Save Codes & Daily Challenge', () => {
+  it('Encodes and decodes portable OS4 Save Codes losslessly', () => {
+    let state = createNewGame({ seed: 'travel-v4', dict, minMatchLength: 3 });
     state = dispatchAction(
       state,
       { type: 'SHIFT', op: { axis: 'row', index: 0, direction: 'right' } },
@@ -22,7 +22,7 @@ describe('Oh! Shift v3 — Persistence, Save Codes & Daily Challenge', () => {
     ).state;
 
     const code = encodeSaveCode(state);
-    expect(code.startsWith('OS3:')).toBe(true);
+    expect(code.startsWith('OS4:')).toBe(true);
 
     const decoded = decodeSaveCode(code);
     expect(decoded.error).toBeUndefined();
@@ -30,9 +30,9 @@ describe('Oh! Shift v3 — Persistence, Save Codes & Daily Challenge', () => {
   });
 
   it('Rejects invalid or corrupted Save Codes safely', () => {
-    expect(decodeSaveCode('OS2:abc').error).toMatch(/prefix/i);
-    expect(decodeSaveCode('OS3:!!!bad!!!').error).toBeDefined();
-    expect(decodeSaveCode('OS3:e30').error).toMatch(/corrupted|incompatible/i);
+    expect(decodeSaveCode('OS3:abc').error).toMatch(/prefix/i);
+    expect(decodeSaveCode('OS4:!!!bad!!!').error).toBeDefined();
+    expect(decodeSaveCode('OS4:e30').error).toMatch(/corrupted|incompatible/i);
   });
 
   it('Computes local YYYY-MM-DD date keys and formats Daily share summary', () => {
@@ -40,7 +40,7 @@ describe('Oh! Shift v3 — Persistence, Save Codes & Daily Challenge', () => {
     expect(getSaveSlotKey('solo', 'run-1')).toBe('solo');
     expect(getSaveSlotKey('daily', 'daily-2026-11-25')).toBe('daily:2026-11-25');
 
-    let state = createDailyGame('2026-11-25', dict, 4);
+    let state = createDailyGame('2026-11-25', dict, 3);
     for (let i = 0; i < DEFAULT_ECONOMY.dailyShiftLimit; i++) {
       state = dispatchAction(
         state,

@@ -51,12 +51,11 @@ export function App() {
 
   const [theme, setTheme] = useState<'light' | 'dark'>(getInitialTheme);
   const [state, setState] = useState<GameState>(() =>
-    createNewGame({ seed: 'oh-shift-v3', mode: 'solo', minMatchLength: 4, dict }),
+    createNewGame({ seed: 'oh-shift-v4', mode: 'solo', minMatchLength: 3, dict }),
   );
   const [records, setRecords] = useState<LifetimeRecords>(createEmptyRecords);
   const [hydrated, setHydrated] = useState(false);
 
-  // Animation display state for the Flash -> Replace -> Cascade beat
   const [displayBoard, setDisplayBoard] = useState<string[][] | null>(null);
   const [flashingCoords, setFlashingCoords] = useState<Coord[]>([]);
   const [freshCoords, setFreshCoords] = useState<Coord[]>([]);
@@ -106,54 +105,52 @@ export function App() {
     setAnimating(false);
   };
 
-  const handleShift = async (op: ShiftOp) => {
-    if (animating || state.dailyComplete) return;
-
+  const handleShift = (op: ShiftOp) => {
+    if (animating) return;
     const res = dispatchAction(state, { type: 'SHIFT', op }, dict);
     if (res.error) {
       setToast({ text: res.error, tone: 'error' });
       return;
     }
+    setState(res.state);
+    persistState(res.state);
+  };
 
-    // Fast path: no words matched — instant shift!
-    if (res.cascades.length === 0) {
-      setState(res.state);
-      persistState(res.state);
+  const handleClaimAt = async (coord: Coord) => {
+    if (animating) return;
+    const res = dispatchAction(state, { type: 'CLAIM_AT', coord }, dict);
+    if (res.error || !res.flash) {
+      setToast({ text: res.error ?? 'No valid word starts here', tone: 'error' });
       return;
     }
 
-    // Play the Flash -> Replace -> Cascade sequence
     const myToken = ++animTokenRef.current;
     const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    const flashMs = reducedMotion ? 160 : 520;
-    const popMs = reducedMotion ? 80 : 220;
+    const flashMs = reducedMotion ? 160 : 480;
+    const popMs = reducedMotion ? 80 : 210;
 
     setAnimating(true);
 
-    for (const step of res.cascades) {
-      if (animTokenRef.current !== myToken) return;
+    const wordsLabel = res.flash.matches.map((m) => m.word).join(' + ');
+    const crossTag = res.flash.crossBonus ? ' · ★ Cross Bonus!' : '';
+    setToast({
+      text: `${wordsLabel} (+${res.flash.stepScore} pts${crossTag})`,
+      tone: 'bonus',
+    });
 
-      const wordsLabel = step.matches.map((m) => m.word).join(' + ');
-      const comboText = step.stepNumber > 1 ? ` · ${step.stepNumber}× Combo!` : '';
-      setToast({
-        text: `${wordsLabel} (+${step.stepScore} pts${comboText})`,
-        tone: 'bonus',
-      });
+    // 1. Flash matched tiles
+    setFreshCoords([]);
+    setDisplayBoard(res.flash.boardBeforeReplace);
+    setFlashingCoords(res.flash.matchedCoords);
+    await sleep(flashMs);
+    if (animTokenRef.current !== myToken) return;
 
-      // 1. Flash the matched horizontal/vertical tiles
-      setFreshCoords([]);
-      setDisplayBoard(step.boardBeforeReplace);
-      setFlashingCoords(step.matchedCoords);
-      await sleep(flashMs);
-      if (animTokenRef.current !== myToken) return;
-
-      // 2. Replace matched tiles with fresh letters
-      setFlashingCoords([]);
-      setDisplayBoard(step.boardAfterReplace);
-      setFreshCoords(step.matchedCoords);
-      await sleep(popMs);
-      if (animTokenRef.current !== myToken) return;
-    }
+    // 2. Replace with fresh seeded letters
+    setFlashingCoords([]);
+    setDisplayBoard(res.flash.boardAfterReplace);
+    setFreshCoords(res.flash.matchedCoords);
+    await sleep(popMs);
+    if (animTokenRef.current !== myToken) return;
 
     setDisplayBoard(null);
     setFlashingCoords([]);
@@ -175,14 +172,17 @@ export function App() {
     resetAnimation();
     if (mode === 'daily') {
       const savedDaily = await loadGameState(`daily:${todayKey}`);
-      const next = savedDaily ?? createDailyGame(todayKey, dict, 4);
+      const next = savedDaily ?? createDailyGame(todayKey, dict, 3);
       setState(next);
       void saveGameState(next);
-      setToast({ text: `Daily ${DEFAULT_ECONOMY.dailyShiftLimit}-Shift Challenge (${todayKey})`, tone: 'info' });
+      setToast({
+        text: `Daily ${DEFAULT_ECONOMY.dailyShiftLimit}-Shift Challenge (${todayKey})`,
+        tone: 'info',
+      });
     } else {
       const savedSolo = await loadGameState('solo');
       const next =
-        savedSolo ?? createNewGame({ seed: makeRandomSeed(), mode: 'solo', minMatchLength: 4, dict });
+        savedSolo ?? createNewGame({ seed: makeRandomSeed(), mode: 'solo', minMatchLength: 3, dict });
       setState(next);
       void saveGameState(next);
       setToast({ text: 'Resumed Endless Board', tone: 'info' });
@@ -196,7 +196,7 @@ export function App() {
     setState(fresh);
     persistState(fresh);
     setToast({
-      text: `New ${minMatchLength === 5 ? '5-Letter' : '4 & 5-Letter'} Endless Board`,
+      text: `New ${minMatchLength === 5 ? '5-Letter' : `${minMatchLength}+ Letter`} Endless Board`,
       tone: 'info',
     });
   };
@@ -239,7 +239,7 @@ export function App() {
               ? `Daily · ${shiftsRemaining} left`
               : state.minMatchLength === 5
                 ? '5-Letter'
-                : 'Endless'}
+                : `${state.minMatchLength}+ Letters`}
           </span>
         </div>
 
@@ -312,11 +312,10 @@ export function App() {
         <section className="phase-complete-card" aria-label="Daily challenge summary">
           <div>
             <div style={{ fontWeight: 700, fontSize: '0.96rem' }}>
-              Daily Complete! — {state.score} pts
+              Daily Shifts Complete! — {state.score} pts
             </div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-              {state.stats.totalWordsFound} words · {state.stats.fiveLetterWords} five-letter · Best
-              Combo {state.stats.bestCombo}×
+              You can still tap any remaining words on the board before sharing!
             </div>
           </div>
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -337,13 +336,15 @@ export function App() {
       {/* Main Responsive Play Area */}
       <main className="play-layout">
         <div className="board-column">
-          {/* 5x5 Tactile Grid with Unlimited Direct Edge Shift Arrows */}
+          {/* 5x5 Tactile Grid: Edge Arrows Shift, Tap First Letter to Claim */}
           <BoardGrid
             board={activeBoard}
             flashingCoords={flashingCoords}
             freshCoords={freshCoords}
-            disabled={animating || state.dailyComplete}
-            onShift={(op) => void handleShift(op)}
+            shiftsDisabled={animating || state.dailyComplete}
+            tilesDisabled={animating}
+            onShift={handleShift}
+            onClaimAt={(coord) => void handleClaimAt(coord)}
           />
 
           {/* Compact Status & Undo Strip */}
@@ -365,7 +366,7 @@ export function App() {
                 </div>
               ) : (
                 <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-                  Slide rows or columns to form {state.minMatchLength === 5 ? '5-letter' : '4 or 5-letter'} words (→ or ↓)
+                  Shift with arrows, then tap the <strong>first letter</strong> of any → or ↓ word
                 </span>
               )}
             </div>

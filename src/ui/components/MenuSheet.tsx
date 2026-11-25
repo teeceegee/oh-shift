@@ -96,21 +96,17 @@ export function MenuSheet({
             <span>Start New Endless Board</span>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-            <button
-              type="button"
-              className={minLen === 4 ? 'btn-primary' : 'btn-secondary'}
-              onClick={() => setMinLen(4)}
-            >
-              4 &amp; 5 Letters (Pacy)
-            </button>
-            <button
-              type="button"
-              className={minLen === 5 ? 'btn-primary' : 'btn-secondary'}
-              onClick={() => setMinLen(5)}
-            >
-              5 Letters Only (Hard)
-            </button>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+            {([3, 4, 5] as const).map((len) => (
+              <button
+                key={len}
+                type="button"
+                className={minLen === len ? 'btn-primary' : 'btn-secondary'}
+                onClick={() => setMinLen(len)}
+              >
+                {len === 5 ? '5 Only' : `${len}+ Letters`}
+              </button>
+            ))}
           </div>
 
           <input
@@ -155,7 +151,7 @@ export function MenuSheet({
             <span>Travel Save Backup</span>
           </div>
           <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-            Auto-saves to IndexedDB after every shift. Export an <code>OS3:</code> Save Code to
+            Auto-saves to IndexedDB after every move. Export an <code>OS4:</code> Save Code to
             transfer between iPhone and iPad.
           </div>
 
@@ -173,7 +169,7 @@ export function MenuSheet({
               type="text"
               value={importText}
               onChange={(e) => setImportText(e.target.value)}
-              placeholder="Paste OS3:... Save Code"
+              placeholder="Paste OS4:... Save Code"
               aria-label="Paste Save Code to import"
               style={{
                 flex: 1,

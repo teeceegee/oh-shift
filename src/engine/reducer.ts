@@ -1,11 +1,17 @@
-import { applyShift, cloneBoard, collectUniqueCoords, findLineMatches, invertShift } from './board';
+import {
+  applyShift,
+  cloneBoard,
+  collectUniqueCoords,
+  findMatchesStartingAt,
+  invertShift,
+} from './board';
 import { DEFAULT_ECONOMY, SCHEMA_VERSION } from './config';
 import type { CompactDictionary } from './dictionary';
-import { drawReplacementLetter, generateCalmStartingBoard } from './generator';
+import { drawReplacementLetter, generateStartingBoard } from './generator';
 import type {
-  CascadeStep,
   DispatchResult,
   EconomyConfig,
+  FlashStep,
   GameAction,
   GameMode,
   GameState,
@@ -29,15 +35,15 @@ function createInitialStats(): RunStats {
     totalWordsFound: 0,
     uniqueWordsCount: 0,
     fiveLetterWords: 0,
-    bestCombo: 0,
+    crossWordsFound: 0,
     longestWord: '',
   };
 }
 
 export function createNewGame(options: CreateGameOptions): GameState {
   const mode = options.mode ?? 'solo';
-  const minMatchLength = options.minMatchLength ?? 4;
-  const board = generateCalmStartingBoard(options.seed, options.dict, minMatchLength);
+  const minMatchLength = options.minMatchLength ?? 3;
+  const board = generateStartingBoard(options.seed);
 
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -67,104 +73,122 @@ export function dispatchAction(
 ): DispatchResult {
   const timestamp = nowIso ?? new Date().toISOString();
 
-  if (state.dailyComplete) {
-    return { state, cascades: [], error: 'Daily 25-shift challenge is already complete' };
-  }
-
   switch (action.type) {
     case 'SHIFT': {
-      let currentBoard = applyShift(state.board, action.op);
+      if (state.dailyComplete) {
+        return { state, flash: null, error: 'Daily 25-shift limit reached — claim any words left on the board!' };
+      }
+      const nextBoard = applyShift(state.board, action.op);
       const nextShiftNumber = state.shiftsMade + 1;
-      let cursor = state.tileDrawCursor;
-      let scoreGain = 0;
-      const newSavedWords: SavedWordRecord[] = [];
-      const cascades: CascadeStep[] = [];
+      const dailyComplete =
+        state.mode === 'daily' && nextShiftNumber >= config.dailyShiftLimit;
 
-      // Automatically spot horizontal & vertical words, flash, save, and replace (with cascades!)
-      for (let step = 1; step <= config.maxCascadesPerShift; step++) {
-        const matches = findLineMatches(currentBoard, dict, state.minMatchLength, config);
-        if (matches.length === 0) break;
+      return {
+        state: {
+          ...state,
+          board: nextBoard,
+          shiftsMade: nextShiftNumber,
+          lastShiftUndoable: action.op,
+          dailyComplete,
+          stats: {
+            ...state.stats,
+            shiftsMade: nextShiftNumber,
+          },
+          updatedAt: timestamp,
+        },
+        flash: null,
+      };
+    }
 
-        const matchedCoords = collectUniqueCoords(matches);
-        const boardBeforeReplace = cloneBoard(currentBoard);
-        const boardAfterReplace = cloneBoard(currentBoard);
+    case 'CLAIM_AT': {
+      const matches = findMatchesStartingAt(
+        state.board,
+        action.coord,
+        dict,
+        state.minMatchLength,
+        config,
+      );
 
-        // Replace every matched tile with a fresh seeded letter
-        for (const coord of matchedCoords) {
-          cursor += 1;
-          const prev = boardBeforeReplace[coord.row][coord.col];
-          boardAfterReplace[coord.row][coord.col] = drawReplacementLetter(state.seed, cursor, prev);
-        }
-
-        // Score with cascade combo multiplier (1x, 2x, 3x...)
-        let stepScore = 0;
-        for (let i = 0; i < matches.length; i++) {
-          const m = matches[i];
-          const wordScore = m.score * step;
-          stepScore += wordScore;
-          newSavedWords.push({
-            id: `s${nextShiftNumber}-c${step}-${i}-${m.word}`,
-            word: m.word,
-            axis: m.axis,
-            score: wordScore,
-            combo: step,
-            shiftNumber: nextShiftNumber,
-          });
-        }
-
-        scoreGain += stepScore;
-        cascades.push({
-          stepNumber: step,
-          matches,
-          matchedCoords,
-          boardBeforeReplace,
-          boardAfterReplace,
-          stepScore,
-        });
-
-        currentBoard = boardAfterReplace;
+      if (matches.length === 0) {
+        const ch = state.board[action.coord.row]?.[action.coord.col] ?? '?';
+        return {
+          state,
+          flash: null,
+          error: `No ${state.minMatchLength}+ letter horizontal or vertical word starts at "${ch}"`,
+        };
       }
 
-      const allSaved = [...newSavedWords.reverse(), ...state.savedWords];
+      const matchedCoords = collectUniqueCoords(matches);
+      const boardBeforeReplace = cloneBoard(state.board);
+      const boardAfterReplace = cloneBoard(state.board);
+      let cursor = state.tileDrawCursor;
+
+      for (const coord of matchedCoords) {
+        cursor += 1;
+        const prev = boardBeforeReplace[coord.row][coord.col];
+        boardAfterReplace[coord.row][coord.col] = drawReplacementLetter(state.seed, cursor, prev);
+      }
+
+      const crossBonus = matches.length >= 2;
+      let stepScore = crossBonus ? config.crossWordBonus : 0;
+      const newRecords: SavedWordRecord[] = [];
+
+      for (let i = 0; i < matches.length; i++) {
+        const m = matches[i];
+        stepScore += m.score;
+        newRecords.push({
+          id: `c${cursor}-${i}-${m.word}`,
+          word: m.word,
+          axis: m.axis,
+          score: m.score,
+          crossBonus,
+          shiftNumber: state.shiftsMade,
+        });
+      }
+
+      const allSaved = [...newRecords.reverse(), ...state.savedWords];
       const uniqueSet = new Set(allSaved.map((w) => w.word));
       let longest = state.stats.longestWord;
       let fiveCount = state.stats.fiveLetterWords;
-      for (const w of newSavedWords) {
+      for (const w of newRecords) {
         if (w.word.length > longest.length) longest = w.word;
         if (w.word.length === 5) fiveCount += 1;
       }
 
-      const maxComboThisShift = cascades.length;
-      const dailyComplete =
-        state.mode === 'daily' && nextShiftNumber >= config.dailyShiftLimit;
-
-      const nextState: GameState = {
-        ...state,
-        board: currentBoard,
-        score: state.score + scoreGain,
-        shiftsMade: nextShiftNumber,
-        tileDrawCursor: cursor,
-        savedWords: allSaved,
-        // Allow 1-tap Undo if this shift did not trigger any word replacement
-        lastShiftUndoable: cascades.length === 0 ? action.op : null,
-        dailyComplete,
-        stats: {
-          shiftsMade: nextShiftNumber,
-          totalWordsFound: allSaved.length,
-          uniqueWordsCount: uniqueSet.size,
-          fiveLetterWords: fiveCount,
-          bestCombo: Math.max(state.stats.bestCombo, maxComboThisShift),
-          longestWord: longest,
-        },
-        updatedAt: timestamp,
+      const flash: FlashStep = {
+        matches,
+        matchedCoords,
+        boardBeforeReplace,
+        boardAfterReplace,
+        stepScore,
+        crossBonus,
       };
 
-      return { state: nextState, cascades };
+      return {
+        state: {
+          ...state,
+          board: boardAfterReplace,
+          score: state.score + stepScore,
+          tileDrawCursor: cursor,
+          savedWords: allSaved,
+          lastShiftUndoable: null,
+          stats: {
+            shiftsMade: state.shiftsMade,
+            totalWordsFound: allSaved.length,
+            uniqueWordsCount: uniqueSet.size,
+            fiveLetterWords: fiveCount,
+            crossWordsFound: state.stats.crossWordsFound + (crossBonus ? 1 : 0),
+            longestWord: longest,
+          },
+          updatedAt: timestamp,
+        },
+        flash,
+      };
     }
 
     case 'UNDO_SHIFT': {
       if (!state.lastShiftUndoable) {
-        return { state, cascades: [], error: 'Nothing to undo' };
+        return { state, flash: null, error: 'Nothing to undo' };
       }
       const revertedBoard = applyShift(state.board, invertShift(state.lastShiftUndoable));
       const nextShifts = Math.max(0, state.shiftsMade - 1);
@@ -175,10 +199,11 @@ export function dispatchAction(
           board: revertedBoard,
           shiftsMade: nextShifts,
           lastShiftUndoable: null,
+          dailyComplete: false,
           stats: { ...state.stats, shiftsMade: nextShifts },
           updatedAt: timestamp,
         },
-        cascades: [],
+        flash: null,
       };
     }
   }

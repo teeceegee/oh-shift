@@ -61,67 +61,68 @@ export function invertShift(op: ShiftOp): ShiftOp {
   };
 }
 
+function scoreForLength(len: number, config: EconomyConfig): number {
+  if (len >= 5) return config.scoreFiveLetter;
+  if (len === 4) return config.scoreFourLetter;
+  return config.scoreThreeLetter;
+}
+
 /**
- * Automatically spots all horizontal (left -> right) and vertical (top -> bottom)
- * common UK English words of length 5 (checked first) or 4 (if minMatchLength === 4).
- * Uses the curated common UK word list (targetWords) so every auto-spotted word
- * is immediately recognisable and never obscure jargon.
+ * Finds the longest valid horizontal (left -> right) and/or vertical (top -> bottom)
+ * UK English word starting at the tapped tile `coord`.
+ * Checks against the full 76,524-word UK English dictionary so any deliberate word
+ * the player spots is accepted.
  */
-export function findLineMatches(
+export function findMatchesStartingAt(
   board: readonly (readonly string[])[],
+  coord: Coord,
   dict: CompactDictionary,
-  minMatchLength: MinMatchLength = 4,
+  minMatchLength: MinMatchLength = 3,
   config: EconomyConfig = DEFAULT_ECONOMY,
 ): WordMatch[] {
+  const { row, col } = coord;
+  if (row < 0 || row >= BOARD_SIZE || col < 0 || col >= BOARD_SIZE) return [];
+
   const matches: WordMatch[] = [];
 
-  const scanLine = (letters: string[], coords: Coord[], axis: 'horizontal' | 'vertical') => {
-    const full = letters.join('');
-    // 1. Check full 5-letter word first (takes priority over 4-letter subwords on the same line)
-    if (dict.isTargetWord(full)) {
+  // 1. Horizontal (left -> right starting at coord)
+  const maxHoriz = BOARD_SIZE - col;
+  for (let len = maxHoriz; len >= minMatchLength; len--) {
+    let word = '';
+    const coords: Coord[] = [];
+    for (let dc = 0; dc < len; dc++) {
+      word += board[row][col + dc];
+      coords.push({ row, col: col + dc });
+    }
+    if (dict.hasWord(word)) {
       matches.push({
-        word: full,
-        axis,
+        word,
+        axis: 'horizontal',
         coords,
-        score: config.scoreFiveLetter,
+        score: scoreForLength(len, config),
       });
-      return;
+      break;
     }
-
-    // 2. If 4-letter matching is enabled, check [0..3] and [1..4]
-    if (minMatchLength <= 4) {
-      const left4 = full.slice(0, 4);
-      const right4 = full.slice(1, 5);
-      if (dict.isTargetWord(left4)) {
-        matches.push({
-          word: left4,
-          axis,
-          coords: coords.slice(0, 4),
-          score: config.scoreFourLetter,
-        });
-      } else if (dict.isTargetWord(right4)) {
-        matches.push({
-          word: right4,
-          axis,
-          coords: coords.slice(1, 5),
-          score: config.scoreFourLetter,
-        });
-      }
-    }
-  };
-
-  // Horizontal rows (left -> right)
-  for (let r = 0; r < BOARD_SIZE; r++) {
-    const letters = board[r].slice();
-    const coords = [0, 1, 2, 3, 4].map((c) => ({ row: r, col: c }));
-    scanLine(letters, coords, 'horizontal');
   }
 
-  // Vertical columns (top -> bottom)
-  for (let c = 0; c < BOARD_SIZE; c++) {
-    const letters = [0, 1, 2, 3, 4].map((r) => board[r][c]);
-    const coords = [0, 1, 2, 3, 4].map((r) => ({ row: r, col: c }));
-    scanLine(letters, coords, 'vertical');
+  // 2. Vertical (top -> bottom starting at coord)
+  const maxVert = BOARD_SIZE - row;
+  for (let len = maxVert; len >= minMatchLength; len--) {
+    let word = '';
+    const coords: Coord[] = [];
+    for (let dr = 0; dr < len; dr++) {
+      word += board[row + dr][col];
+      coords.push({ row: row + dr, col });
+    }
+    if (dict.hasWord(word)) {
+      matches.push({
+        word,
+        axis: 'vertical',
+        coords,
+        score: scoreForLength(len, config),
+      });
+      break;
+    }
   }
 
   return matches;

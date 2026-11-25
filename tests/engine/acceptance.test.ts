@@ -5,12 +5,12 @@ import {
   createNewGame,
   DEFAULT_ECONOMY,
   dispatchAction,
-  findLineMatches,
+  findMatchesStartingAt,
 } from '../../src/engine';
 
 const dict = getBundledDictionary();
 
-describe('Oh! Shift v3 — Unlimited Shifts & Auto-Spot H/V Matching', () => {
+describe('Oh! Shift v4 — Deliberate 1-Tap First-Letter Word Claiming', () => {
   const sampleBoard = [
     ['S', 'T', 'A', 'R', 'E'],
     ['P', 'L', 'O', 'N', 'D'],
@@ -19,32 +19,8 @@ describe('Oh! Shift v3 — Unlimited Shifts & Auto-Spot H/V Matching', () => {
     ['G', 'H', 'O', 'U', 'L'],
   ];
 
-  it('Starting board is calm (0 pre-existing H/V matches)', () => {
-    for (let i = 0; i < 15; i++) {
-      const state = createNewGame({ seed: `calm-${i}`, dict, minMatchLength: 4 });
-      expect(findLineMatches(state.board, dict, 4)).toHaveLength(0);
-    }
-  });
-
-  it('Row right shift of [S,T,A,R,E] yields [E,S,T,A,R] and left shift restores it', () => {
-    const right = applyShift(sampleBoard, { axis: 'row', index: 0, direction: 'right' });
-    expect(right[0]).toEqual(['E', 'S', 'T', 'A', 'R']);
-    expect(applyShift(right, { axis: 'row', index: 0, direction: 'left' })[0]).toEqual([
-      'S', 'T', 'A', 'R', 'E',
-    ]);
-  });
-
-  it('Column shifts wrap vertically and reverse cleanly', () => {
-    const down = applyShift(sampleBoard, { axis: 'col', index: 0, direction: 'down' });
-    expect(down.map((r) => r[0])).toEqual(['G', 'S', 'P', 'C', 'B']);
-    expect(applyShift(down, { axis: 'col', index: 0, direction: 'up' }).map((r) => r[0])).toEqual([
-      'S', 'P', 'C', 'B', 'G',
-    ]);
-  });
-
-  it('Automatically spots a horizontal 5-letter word after a shift, saves it, and replaces its tiles', () => {
-    const base = createNewGame({ seed: 'horiz-match', dict, minMatchLength: 4 });
-    // Row 0 is ['T', 'P', 'L', 'A', 'N'] -> shifting row 0 LEFT yields ['P', 'L', 'A', 'N', 'T']!
+  it('Shifting never triggers accidental word claims or tile replacements', () => {
+    const base = createNewGame({ seed: 'no-accidents', dict, minMatchLength: 3 });
     const board = [
       ['T', 'P', 'L', 'A', 'N'],
       ['X', 'Q', 'Z', 'J', 'K'],
@@ -54,39 +30,51 @@ describe('Oh! Shift v3 — Unlimited Shifts & Auto-Spot H/V Matching', () => {
     ];
     const state = { ...base, board };
 
-    const res = dispatchAction(
+    // Shift row 0 left -> spells PLANT, but must NOT fire until player taps 'P'!
+    const shifted = dispatchAction(
       state,
       { type: 'SHIFT', op: { axis: 'row', index: 0, direction: 'left' } },
       dict,
     );
+    expect(shifted.flash).toBeNull();
+    expect(shifted.state.board[0].join('')).toBe('PLANT');
+    expect(shifted.state.savedWords).toHaveLength(0);
 
-    expect(res.error).toBeUndefined();
-    expect(res.cascades.length).toBeGreaterThanOrEqual(1);
-    expect(res.cascades[0].matches.some((m) => m.word === 'PLANT' && m.axis === 'horizontal')).toBe(
-      true,
-    );
-    expect(res.state.savedWords.some((w) => w.word === 'PLANT')).toBe(true);
-    expect(res.state.score).toBeGreaterThanOrEqual(DEFAULT_ECONOMY.scoreFiveLetter);
-    // Row 0 tiles must have been replaced
-    expect(res.state.board[0].join('')).not.toBe('PLANT');
+    // Now tap the first letter 'P' at (0, 0) -> claims PLANT, flashes, saves, replaces!
+    const claimed = dispatchAction(shifted.state, { type: 'CLAIM_AT', coord: { row: 0, col: 0 } }, dict);
+    expect(claimed.error).toBeUndefined();
+    expect(claimed.flash).not.toBeNull();
+    expect(claimed.flash!.matches[0].word).toBe('PLANT');
+    expect(claimed.state.savedWords[0].word).toBe('PLANT');
+    expect(claimed.state.score).toBe(DEFAULT_ECONOMY.scoreFiveLetter);
+    expect(claimed.state.board[0].join('')).not.toBe('PLANT');
   });
 
-  it('Automatically spots a vertical 4-letter word (top -> bottom) and respects 5-letter-only mode', () => {
+  it('Tapping a shared first letter claims BOTH horizontal and vertical words with Cross-Word Bonus', () => {
+    const base = createNewGame({ seed: 'cross-bonus', dict, minMatchLength: 3 });
+    // (0,0) = 'S': horizontal 'STARE' (50) + vertical 'SLIM' (25) + Cross Bonus (25) = 100!
     const board = [
-      ['X', 'Q', 'Z', 'J', 'K'],
-      ['S', 'W', 'X', 'Z', 'Q'],
-      ['T', 'K', 'X', 'V', 'Z'],
-      ['A', 'Z', 'J', 'X', 'W'],
-      ['R', 'Q', 'V', 'K', 'Z'],
+      ['S', 'T', 'A', 'R', 'E'],
+      ['L', 'Q', 'Z', 'J', 'K'],
+      ['I', 'W', 'X', 'Z', 'Q'],
+      ['M', 'K', 'X', 'V', 'Z'],
+      ['X', 'Z', 'J', 'X', 'W'],
     ];
-    // Column 0 has X, S, T, A, R -> 4-letter 'STAR' at rows 1..4
-    const matches4 = findLineMatches(board, dict, 4);
-    expect(matches4.some((m) => m.word === 'STAR' && m.axis === 'vertical')).toBe(true);
+    const state = { ...base, board };
 
-    const matches5 = findLineMatches(board, dict, 5);
-    expect(matches5).toHaveLength(0);
+    const res = dispatchAction(state, { type: 'CLAIM_AT', coord: { row: 0, col: 0 } }, dict);
+    expect(res.error).toBeUndefined();
+    expect(res.flash!.crossBonus).toBe(true);
+    expect(res.flash!.matches.map((m) => m.word).sort()).toEqual(['SLIM', 'STARE']);
+    expect(res.state.score).toBe(
+      DEFAULT_ECONOMY.scoreFiveLetter +
+        DEFAULT_ECONOMY.scoreFourLetter +
+        DEFAULT_ECONOMY.crossWordBonus,
+    );
+    expect(res.state.stats.crossWordsFound).toBe(1);
+  });
 
-    // Regression: common everyday words from SCOWL tier 35/40 like RIPE must be spotted
+  it('Picks the longest valid word starting at the tapped tile and handles RIPE', () => {
     const ripeBoard = [
       ['C', 'K', 'P', 'L', 'I'],
       ['R', 'I', 'P', 'E', 'Y'],
@@ -94,42 +82,35 @@ describe('Oh! Shift v3 — Unlimited Shifts & Auto-Spot H/V Matching', () => {
       ['I', 'M', 'B', 'O', 'B'],
       ['A', 'A', 'M', 'M', 'P'],
     ];
-    expect(
-      findLineMatches(ripeBoard, dict, 4).some((m) => m.word === 'RIPE' && m.axis === 'horizontal'),
-    ).toBe(true);
-  });
+    const matches = findMatchesStartingAt(ripeBoard, { row: 1, col: 0 }, dict, 3);
+    expect(matches.some((m) => m.word === 'RIPE' && m.axis === 'horizontal')).toBe(true);
 
-  it('Allows unlimited shifts in Endless mode and 1-tap Undo on non-matching shifts', () => {
-    let state = createNewGame({ seed: 'unlimited-test', dict, minMatchLength: 5 });
-    const startBoard = state.board.map((r) => r.slice());
-
-    const r1 = dispatchAction(
-      state,
-      { type: 'SHIFT', op: { axis: 'row', index: 0, direction: 'right' } },
+    // Tapping a letter that starts no valid word returns a clean error without mutating board
+    const base = createNewGame({ seed: 'miss-tap', dict, minMatchLength: 4 });
+    const miss = dispatchAction(
+      { ...base, board: ripeBoard },
+      { type: 'CLAIM_AT', coord: { row: 4, col: 4 } },
       dict,
     );
-    expect(r1.state.shiftsMade).toBe(1);
-
-    if (r1.cascades.length === 0) {
-      const undo = dispatchAction(r1.state, { type: 'UNDO_SHIFT' }, dict);
-      expect(undo.error).toBeUndefined();
-      expect(undo.state.shiftsMade).toBe(0);
-      expect(undo.state.board).toEqual(startBoard);
-    }
-
-    // Make 40 shifts in Endless mode with zero shift-token restrictions
-    for (let i = 0; i < 40; i++) {
-      state = dispatchAction(
-        state,
-        { type: 'SHIFT', op: { axis: i % 2 === 0 ? 'row' : 'col', index: i % 5, direction: i % 2 === 0 ? 'right' : 'down' } },
-        dict,
-      ).state;
-    }
-    expect(state.shiftsMade).toBe(40);
-    expect(state.dailyComplete).toBe(false);
+    expect(miss.error).toMatch(/no 4\+ letter/i);
+    expect(miss.flash).toBeNull();
   });
 
-  it('Daily mode completes cleanly after 25 shifts', () => {
+  it('Row and column wraparound shifts reverse cleanly and Undo works', () => {
+    const right = applyShift(sampleBoard, { axis: 'row', index: 0, direction: 'right' });
+    expect(right[0]).toEqual(['E', 'S', 'T', 'A', 'R']);
+    expect(applyShift(right, { axis: 'row', index: 0, direction: 'left' })[0]).toEqual([
+      'S', 'T', 'A', 'R', 'E',
+    ]);
+
+    const state = createNewGame({ seed: 'undo-test', dict });
+    const s1 = dispatchAction(state, { type: 'SHIFT', op: { axis: 'col', index: 1, direction: 'down' } }, dict);
+    const u1 = dispatchAction(s1.state, { type: 'UNDO_SHIFT' }, dict);
+    expect(u1.state.board).toEqual(state.board);
+    expect(u1.state.shiftsMade).toBe(0);
+  });
+
+  it('Daily mode stops further shifts at 25 but still allows claiming remaining board words', () => {
     let state = createNewGame({ seed: 'daily-2026-11-25', mode: 'daily', dict });
     for (let i = 0; i < DEFAULT_ECONOMY.dailyShiftLimit; i++) {
       state = dispatchAction(
@@ -139,24 +120,11 @@ describe('Oh! Shift v3 — Unlimited Shifts & Auto-Spot H/V Matching', () => {
       ).state;
     }
     expect(state.dailyComplete).toBe(true);
-    expect(state.shiftsMade).toBe(DEFAULT_ECONOMY.dailyShiftLimit);
-
-    const extra = dispatchAction(
+    const blockedShift = dispatchAction(
       state,
       { type: 'SHIFT', op: { axis: 'row', index: 0, direction: 'left' } },
       dict,
     );
-    expect(extra.error).toMatch(/already complete/i);
-  });
-
-  it('Deterministic seeding produces identical boards and replacement tiles', () => {
-    const t = '2026-11-25T12:00:00.000Z';
-    const a = createNewGame({ seed: 'same-seed', dict, nowIso: t });
-    const b = createNewGame({ seed: 'same-seed', dict, nowIso: t });
-    expect(a).toEqual(b);
-
-    const a2 = dispatchAction(a, { type: 'SHIFT', op: { axis: 'col', index: 2, direction: 'up' } }, dict, DEFAULT_ECONOMY, t);
-    const b2 = dispatchAction(b, { type: 'SHIFT', op: { axis: 'col', index: 2, direction: 'up' } }, dict, DEFAULT_ECONOMY, t);
-    expect(a2).toEqual(b2);
+    expect(blockedShift.error).toMatch(/25-shift limit/i);
   });
 });

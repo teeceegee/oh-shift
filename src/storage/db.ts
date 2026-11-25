@@ -5,7 +5,7 @@ const DB_NAME = 'oh-shift-db';
 const DB_VERSION = 1;
 const STORE_SAVES = 'saves';
 const STORE_META = 'meta';
-const META_KEY_RECORDS = 'lifetime_records_v3';
+const META_KEY_RECORDS = 'lifetime_records_v4';
 
 export interface RunSummary {
   gameId: string;
@@ -16,14 +16,14 @@ export interface RunSummary {
   shiftsMade: number;
   wordsFound: number;
   fiveLetterWords: number;
-  bestCombo: number;
+  crossWordsFound: number;
   savedAt: string;
 }
 
 export interface LifetimeRecords {
   bestEndlessScore: number;
   bestDailyScore: number;
-  bestComboEver: number;
+  totalCrossWordsEver: number;
   dailiesCompleted: string[];
   recentRuns: RunSummary[];
 }
@@ -32,7 +32,7 @@ export function createEmptyRecords(): LifetimeRecords {
   return {
     bestEndlessScore: 0,
     bestDailyScore: 0,
-    bestComboEver: 0,
+    totalCrossWordsEver: 0,
     dailiesCompleted: [],
     recentRuns: [],
   };
@@ -151,7 +151,7 @@ export async function recordGameSnapshot(state: GameState): Promise<LifetimeReco
       state.mode === 'daily'
         ? Math.max(current.bestDailyScore, state.score)
         : current.bestDailyScore,
-    bestComboEver: Math.max(current.bestComboEver, state.stats.bestCombo),
+    totalCrossWordsEver: Math.max(current.totalCrossWordsEver, state.stats.crossWordsFound),
     dailiesCompleted:
       state.mode === 'daily' && state.dailyComplete
         ? Array.from(new Set([...current.dailiesCompleted, state.seed.replace(/^daily-/, '')])).sort()
@@ -173,7 +173,7 @@ function upsertRunSummary(runs: readonly RunSummary[], state: GameState): RunSum
     shiftsMade: state.shiftsMade,
     wordsFound: state.stats.totalWordsFound,
     fiveLetterWords: state.stats.fiveLetterWords,
-    bestCombo: state.stats.bestCombo,
+    crossWordsFound: state.stats.crossWordsFound,
     savedAt: state.updatedAt,
   };
 
@@ -181,7 +181,7 @@ function upsertRunSummary(runs: readonly RunSummary[], state: GameState): RunSum
   return [summary, ...filtered].slice(0, 20);
 }
 
-const SAVE_CODE_PREFIX = 'OS3:';
+const SAVE_CODE_PREFIX = 'OS4:';
 
 export function encodeSaveCode(state: GameState): string {
   const json = JSON.stringify(state);
@@ -197,7 +197,7 @@ export function encodeSaveCode(state: GameState): string {
 export function decodeSaveCode(code: string): { state?: GameState; error?: string } {
   const trimmed = code.trim();
   if (!trimmed.startsWith(SAVE_CODE_PREFIX)) {
-    return { error: 'Invalid Save Code prefix (expected OS3:...)' };
+    return { error: 'Invalid Save Code prefix (expected OS4:...)' };
   }
 
   try {

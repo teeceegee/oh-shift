@@ -4,8 +4,10 @@ interface BoardGridProps {
   board: readonly (readonly string[])[];
   flashingCoords: readonly Coord[];
   freshCoords: readonly Coord[];
-  disabled?: boolean;
+  shiftsDisabled?: boolean;
+  tilesDisabled?: boolean;
   onShift: (op: ShiftOp) => void;
+  onClaimAt: (coord: Coord) => void;
 }
 
 const COL_LABELS = ['A', 'B', 'C', 'D', 'E'];
@@ -15,8 +17,10 @@ export function BoardGrid({
   board,
   flashingCoords,
   freshCoords,
-  disabled = false,
+  shiftsDisabled = false,
+  tilesDisabled = false,
   onShift,
+  onClaimAt,
 }: BoardGridProps) {
   const flashSet = new Set(flashingCoords.map((c) => `${c.row}:${c.col}`));
   const freshSet = new Set(freshCoords.map((c) => `${c.row}:${c.col}`));
@@ -31,7 +35,7 @@ export function BoardGrid({
             type="button"
             className="shift-arrow-btn shift-arrow-btn--top"
             style={{ gridColumn: col + 2, gridRow: 1 }}
-            disabled={disabled}
+            disabled={shiftsDisabled}
             aria-label={`Shift Column ${COL_LABELS[col]} Up`}
             title={`Shift Column ${COL_LABELS[col]} Up`}
             onClick={() => onShift({ axis: 'col', index: col, direction: 'up' })}
@@ -47,7 +51,7 @@ export function BoardGrid({
             type="button"
             className="shift-arrow-btn shift-arrow-btn--side"
             style={{ gridColumn: 1, gridRow: row + 2 }}
-            disabled={disabled}
+            disabled={shiftsDisabled}
             aria-label={`Shift Row ${row + 1} Left`}
             title={`Shift Row ${row + 1} Left`}
             onClick={() => onShift({ axis: 'row', index: row, direction: 'left' })}
@@ -56,7 +60,7 @@ export function BoardGrid({
           </button>
         ))}
 
-        {/* Inner 5x5 Letter Tile Grid */}
+        {/* Inner 5x5 Letter Tile Grid — tap the first letter of any H/V word to claim it! */}
         <div
           className="board-grid"
           role="grid"
@@ -70,7 +74,6 @@ export function BoardGrid({
 
               const classes = [
                 'tile-btn',
-                'tile-btn--static',
                 isFlashing ? 'tile-btn--flash' : '',
                 isFresh ? 'tile-btn--fresh' : '',
               ]
@@ -78,16 +81,16 @@ export function BoardGrid({
                 .join(' ');
 
               return (
-                <div
+                <button
                   key={`${r}-${c}`}
-                  role="gridcell"
+                  type="button"
                   className={classes}
-                  aria-label={`Letter ${letter}, Row ${r + 1}, Column ${COL_LABELS[c]}${
-                    isFlashing ? ', matched word!' : ''
-                  }`}
+                  disabled={tilesDisabled}
+                  aria-label={`Letter ${letter}, Row ${r + 1}, Column ${COL_LABELS[c]}. Tap to claim word starting here.`}
+                  onClick={() => onClaimAt({ row: r, col: c })}
                 >
                   <span>{letter}</span>
-                </div>
+                </button>
               );
             }),
           )}
@@ -100,7 +103,7 @@ export function BoardGrid({
             type="button"
             className="shift-arrow-btn shift-arrow-btn--side"
             style={{ gridColumn: 7, gridRow: row + 2 }}
-            disabled={disabled}
+            disabled={shiftsDisabled}
             aria-label={`Shift Row ${row + 1} Right`}
             title={`Shift Row ${row + 1} Right`}
             onClick={() => onShift({ axis: 'row', index: row, direction: 'right' })}
@@ -116,7 +119,7 @@ export function BoardGrid({
             type="button"
             className="shift-arrow-btn shift-arrow-btn--bottom"
             style={{ gridColumn: col + 2, gridRow: 7 }}
-            disabled={disabled}
+            disabled={shiftsDisabled}
             aria-label={`Shift Column ${COL_LABELS[col]} Down`}
             title={`Shift Column ${COL_LABELS[col]} Down`}
             onClick={() => onShift({ axis: 'col', index: col, direction: 'down' })}
